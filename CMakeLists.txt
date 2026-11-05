@@ -16,7 +16,8 @@ add_library(evida-core STATIC
     src/core/evidence.cpp
     src/core/store.cpp
     src/core/auth.cpp
-    src/core/ingest.cpp)
+    src/core/ingest.cpp
+    src/core/corpus.cpp)
 target_include_directories(evida-core PUBLIC include)
 target_link_libraries(evida-core PUBLIC ${EVIDA_SQLITE_TARGET} OpenSSL::Crypto OpenSSL::SSL)
 target_compile_options(evida-core PRIVATE -Wall -Wextra -Wpedantic)

@@ -1,0 +1,110 @@
+{
+  "versao": "1.0.0",
+  "descricao": "Taxonomia inicial controlada para ocorrências documentais municipais. Padrões são expressões regulares sem distinção de maiúsculas/minúsculas.",
+  "classes": {
+    "CLIMATICA": {
+      "estiagem": ["\\bestiagem\\b", "d[eé]ficit h[ií]drico"],
+      "seca": ["\\bseca\\b", "tempo seco", "per[ií]odo seco"],
+      "chuva_intensa": ["chuvas? intens", "precipita[cç][oõ]es? intens", "temporal", "alto volume de chuva"],
+      "excesso_hidrico": ["excesso de (?:chuva|umidade)", "umidade excessiva", "encharc"],
+      "alagamento": ["alagament", "\\balagad"],
+      "enchente": ["enchente", "inunda[cç]"],
+      "geada": ["geadas?"],
+      "onda_frio": ["onda de frio", "frio intenso", "baixas temperaturas"],
+      "onda_calor": ["onda de calor", "calor intenso", "temperaturas? elevadas?"],
+      "granizo": ["granizo"],
+      "vento": ["ventos? fortes?", "vendaval", "rajadas?"],
+      "ciclone": ["ciclone"],
+      "baixa_luminosidade": ["baixa (?:luminosidade|radia[cç][aã]o|insola[cç][aã]o)", "falta de radia[cç][aã]o solar", "nebulosidade"],
+      "outro_climatico": []
+    },
+    "ECOLOGICA": {
+      "solo_seco": ["solo seco", "baixa umidade do solo", "defici[eê]ncia de umidade no solo"],
+      "solo_saturado": ["solo (?:saturado|encharcado)", "satura[cç][aã]o do solo", "encharcamento do solo"],
+      "erosao": ["eros[aã]o", "processos? erosivos?"],
+      "compactacao": ["compacta[cç][aã]o"],
+      "degradacao_pisoteio": ["degrada[cç][aã]o por pisoteio", "danos?.{0,40}pisoteio"],
+      "baixa_cobertura": ["baixa cobertura", "solo descoberto"],
+      "baixa_disponibilidade_forragem": ["baixa disponibilidade de forragem", "escassez de forragem"],
+      "restricao_hidrica": ["restri[cç][aã]o h[ií]drica", "limita[cç][aã]o h[ií]drica", "escassez h[ií]drica"],
+      "outro_ecologico": []
+    },
+    "PRODUTIVA": {
+      "queda_producao": ["queda (?:da|na) produ[cç][aã]o", "redu[cç][aã]o (?:da|na) produ[cç][aã]o", "produ[cç][aã]o.{0,30}(?:caiu|reduzida|comprometida)"],
+      "queda_produtividade": ["queda (?:da|na) produtividade", "produtividade.{0,30}(?:abaixo|reduzida|menor)"],
+      "perda_condicao_corporal": ["perda de condi[cç][aã]o corporal", "redu[cç][aã]o do escore corporal"],
+      "restricao_pastejo": ["limit(?:ou|ando|ada).{0,40}pastejo", "restri[cç][aã]o (?:ao|de) pastejo", "pastejo.{0,30}(?:limitado|suspenso)"],
+      "atraso_semeadura": ["atraso.{0,40}semeadura", "semeadura.{0,40}atras"],
+      "mortalidade_plantas": ["morte de plantas", "mortalidade de plantas"],
+      "perda_qualidade_forragem": ["perda de qualidade (?:da|de) forragem", "qualidade (?:da|de) forragem.{0,30}(?:reduzida|baixa|comprometida)"],
+      "reducao_oferta_forragem": ["redu[cç][aã]o (?:da|na) oferta de forragem", "oferta de forragem.{0,30}(?:reduzida|baixa|limitada)"],
+      "outro_produtivo": []
+    },
+    "SANITARIA": {
+      "mastite": ["mastite"],
+      "problema_podal": ["problemas? (?:de casco|podais?)", "afec[cç][oõ]es? podais?"],
+      "carrapato": ["carrapatos?"],
+      "doenca": ["doen[cç]as?", "viroses?", "fungos?", "podrid[aã]o", "ferrugem", "m[ií]ldio", "o[ií]dio"],
+      "praga": ["\\bpragas?\\b", "lagartas?", "percevejos?", "[aá]caros?", "cigarrinhas?"],
+      "mortalidade": ["mortalidade", "morte de animais"],
+      "risco_sanitario": ["aten[cç][aã]o.{0,50}preven[cç][aã]o.{0,60}(?:mastite|problemas? podais?)", "risco de.{0,50}(?:doen[cç]a|mastite|problemas? podais?)"],
+      "outro_sanitario": []
+    },
+    "ECONOMICA": {
+      "aumento_custo": ["aumento (?:de|dos) custos?", "custos? (?:maiores|elevados)", "eleva[cç][aã]o dos custos?"],
+      "desconto_preco": ["desconto.{0,30}pre[cç]o"],
+      "queda_preco": ["queda (?:de|dos|no) pre[cç]os?", "redu[cç][aã]o (?:de|dos|no) pre[cç]os?", "pre[cç]os? baixos?"],
+      "alta_preco": ["alta (?:de|dos|no) pre[cç]os?", "aumento (?:de|dos|no) pre[cç]os?", "valoriza[cç][aã]o (?:do|dos|no) pre[cç]os?"],
+      "restricao_comercializacao": ["dificuldades? de comercializa[cç][aã]o", "restri[cç][aã]o.{0,30}comercializa[cç][aã]o", "comercializa[cç][aã]o.{0,30}(?:limitada|prejudicada)"],
+      "outro_economico": []
+    },
+    "INFRAESTRUTURA": {
+      "falta_energia": ["falta de energia", "interrup[cç][aã]o.{0,20}energia"],
+      "dificuldade_acesso": ["dificuldade de acesso", "acesso.{0,30}(?:impedido|prejudicado|bloqueado)"],
+      "dano_cerca": ["cercas? (?:danificadas?|rompidas?)", "danos?.{0,20}cercas?"],
+      "restricao_trafego": ["restri[cç][aã]o (?:de|ao) tr[aá]fego", "tr[aá]fego.{0,30}(?:interrompido|restrito)"],
+      "outro_infraestrutura": []
+    },
+    "RESPOSTA_MANEJO": {
+      "suplementacao": ["suplementa[cç][aã]o", "suplemento (?:alimentar|proteico|mineral)"],
+      "silagem": ["fornecimento de silagem", "uso de silagem", "utiliza[cç][aã]o de silagem"],
+      "feno": ["fornecimento de feno", "uso de feno", "utiliza[cç][aã]o de feno", "fena[cç][aã]o"],
+      "ajuste_lotacao": ["ajuste de lota[cç][aã]o", "redu[cç][aã]o da lota[cç][aã]o"],
+      "mudanca_horario_pastejo": ["mudan[cç]a.{0,30}hor[aá]rio.{0,30}pastejo", "pastejo.{0,30}hor[aá]rios?"],
+      "replantio": ["\\breplantio\\b", "\\bressemeadura\\b"],
+      "aplicacao_insumo": ["aplica[cç][aã]o (?:de|dos) (?:insumos?|fertilizantes?|defensivos?|fungicidas?|inseticidas?)"],
+      "mudanca_area_pastejo": ["mudan[cç]a.{0,30}[aá]rea.{0,30}pastejo", "transfer[eê]ncia.{0,30}animais.{0,30}[aá]rea"],
+      "preservacao_pastagem": ["preserva[cç][aã]o (?:da|de) pastagem", "evitar danos? (?:às|nas) pastagens?"],
+      "monitoramento": ["monitoramento", "monitoraram", "acompanhamento", "vistorias?"],
+      "outro_manejo": []
+    },
+    "INSTITUCIONAL": {
+      "ater": ["assist[eê]ncia t[eé]cnica", "\\bATER(?:S)?\\b", "Emater/RS-Ascar.{0,100}(?:orient|acompanh|assist|recomend)"],
+      "credito": ["cr[eé]dito rural", "\\bPronaf\\b"],
+      "programa_publico": ["programa (?:p[uú]blico|governamental)", "pol[ií]tica p[uú]blica", "\\bProagro\\b"],
+      "capacitacao": ["capacita[cç][aã]o", "curso.{0,60}(?:produtores|agricultores|t[eé]cnicos)"],
+      "cooperativa": ["cooperativas?"],
+      "associacao": ["associa[cç][oõ]es?"],
+      "acao_publica": ["prefeitura.{0,100}(?:realiz|apoi|disponibil|promov)", "Defesa Civil.{0,100}(?:realiz|apoi|atend)", "governo.{0,100}(?:realiz|apoi|disponibil|promov)"],
+      "outro_institucional": []
+    }
+  },
+  "componentes": {
+    "campo_nativo": ["campo nativo"],
+    "aveia": ["\\baveia\\b"],
+    "azevem": ["azev[eé]m"],
+    "trevo": ["\\btrevo"],
+    "cornichao": ["cornich[aã]o"],
+    "pastagem_anual_inverno": ["pastagens? anuais? de inverno", "forrageiras? anuais? de inverno"],
+    "pastagem_perene_verao": ["pastagens? perenes? de ver[aã]o", "forrageiras? perenes? de ver[aã]o"],
+    "resteva_arroz": ["restevas? de arroz"],
+    "resteva_soja": ["restevas? de soja"],
+    "milheto": ["milheto"],
+    "capim_sudao": ["capim-sud[aã]o"],
+    "tifton": ["tifton"],
+    "braquiaria": ["braqui[aá]ria"],
+    "panicum": ["Panicum", "panicuns?"],
+    "capim_elefante": ["capim-elefante"],
+    "outro": []
+  }
+}

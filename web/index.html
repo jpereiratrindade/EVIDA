@@ -1,11 +1,17 @@
 <!doctype html>
+<!--
+  SPDX-License-Identifier: GPL-3.0-or-later
+  Copyright (C) 2026 EVIDA Contributors
+  EVIDA — Sistema Científico de Evidências Documentais e Análise
+  Distribuído sob a Licença Pública Geral GNU v3.0 (GPLv3).
+-->
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#071e38">
-  <meta name="description" content="EVIDA — Observatório de evidências científicas: ingestão documental com proveniência verificável.">
-  <title>EVIDA · Ciência Documental</title>
+  <meta name="description" content="EVIDA — Observatório de evidências científicas: corpus documental com proveniência e integridade criptográfica verificável.">
+  <title>EVIDA · Evidências Documentais e Análise Científica</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/app.css">
   <script src="/app.js" defer></script>
@@ -14,7 +20,7 @@
 <a class="skip" href="#main">Ir para o conteúdo</a>
 
 <div class="shell">
-  <!-- SIDEBAR PADRÃO MORFO -->
+  <!-- SIDEBAR PADRÃO MORFO / SISTER -->
   <aside class="sidebar" id="sidebar">
     <a class="brand" href="/" aria-label="EVIDA, início">
       <svg viewBox="0 0 52 52" aria-hidden="true" class="brand-logo">
@@ -31,13 +37,15 @@
     </a>
     <p class="sidebar-subtitle">Observatório de Evidências Científicas</p>
 
-    <div class="navlabel">ESPAÇO DE TRABALHO</div>
-    <nav aria-label="Seções principais" id="navigation">
+    <div class="navlabel">CORPUS &amp; CONHECIMENTO</div>
+    <nav aria-label="Navegação principal" id="navigation">
       <button type="button" data-view="visao" class="active" aria-current="page"><span class="navico">▦</span>Visão geral</button>
-      <button type="button" data-view="ingestao"><span class="navico">⇧</span>Ingestão documental</button>
-      <button type="button" data-view="evidencias"><span class="navico">◈</span>Acervo de evidências</button>
-      <button type="button" data-view="integridade"><span class="navico">⌁</span>Integridade &amp; origem</button>
-      <button type="button" data-view="sobre"><span class="navico">ⓘ</span>Sobre o EVIDA</button>
+      <button type="button" data-view="eventos"><span class="navico">⌁</span>Eventos &amp; Riscos</button>
+      <button type="button" data-view="observacoes"><span class="navico">◈</span>Observações &amp; Métricas</button>
+      <button type="button" data-view="territorios"><span class="navico">⌖</span>Territórios IBGE (RS)</button>
+      <button type="button" data-view="episodios"><span class="navico">⟲</span>Episódios &amp; Séries</button>
+      <button type="button" data-view="custodia"><span class="navico">◫</span>Cofre &amp; Custódia</button>
+      <button type="button" data-view="sobre"><span class="navico">ⓘ</span>Sobre &amp; Método</button>
       <button type="button" data-view="usuarios" id="nav-btn-usuarios" class="hidden"><span class="navico">⚙</span>Gestão de Usuários</button>
     </nav>
 
@@ -45,12 +53,12 @@
       <div class="side-note">
         <small>REGRA METODOLÓGICA</small>
         <strong>Sempre pronto.<br>Sempre incompleto.</strong>
-        <p>Uma afirmação documental é evidência de registro, não comprovação automática do fato.</p>
+        <p>Uma afirmação documental é evidência de registro oficial, não comprovação física automática.</p>
       </div>
       <div class="connection">
         <span class="connection-dot"></span>
-        <span>Acesso local</span>
-        <span id="connection-version">v0.2.0</span>
+        <span>Acesso local seguro</span>
+        <span id="connection-version">v0.3.0</span>
       </div>
     </div>
   </aside>
@@ -79,7 +87,7 @@
 
       <div class="top-status">
         <span class="status-pulse"></span>
-        <span id="service-state">Serviço Conectado</span>
+        <span id="service-state">Corpus 2026 Ativo</span>
       </div>
     </header>
 
@@ -90,11 +98,12 @@
         <div class="hero">
           <div class="hero-copy">
             <span class="eyebrow">OBSERVAR · PRESERVAR · EVIDENCIAR</span>
-            <h1 id="visao-title">O documento original é a <em>fonte primária.</em></h1>
-            <p>Recebimento estruturado de informativos da Emater/RS-Ascar, extração reproduzível de conteúdo por página e registro imutável de proveniência.</p>
+            <h1 id="visao-title">Evidências científicas com <em>prova documental verificável.</em></h1>
+            <p>Corpus dos Informativos Conjunturais da Emater/RS-Ascar (2026). Cada evento climático, métrica produtiva e menção municipal é indexada como evidência documental com vínculo criptográfico ao PDF fonte original.</p>
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
-              <button class="button white" id="hero-go-ingest" type="button">+ Receber e Ingerir PDFs <span aria-hidden="true">↗</span></button>
-              <button class="button outline" id="hero-sample-ingest" type="button" style="color:#fff;border-color:#ffffff44;">⚡ Ingerir amostra Emater nº 1901</button>
+              <button class="button white" id="hero-go-events" type="button">⌁ Explorar Eventos &amp; Riscos <span aria-hidden="true">→</span></button>
+              <button class="button outline" id="hero-go-territories" type="button" style="color:#fff;border-color:#ffffff44;">⌖ Municípios IBGE</button>
+              <button class="button outline" id="hero-go-vault" type="button" style="color:#fff;border-color:#ffffff44;">◫ Cofre de Custódia</button>
             </div>
           </div>
           <svg class="hero-network" viewBox="0 0 260 224" aria-hidden="true">
@@ -112,119 +121,316 @@
         </div>
 
         <div class="statgrid">
-          <article class="stat">
-            <span>Documentos indexados</span>
-            <strong id="stat-documents">—</strong>
-            <small>PDFs preservados com hash SHA-256</small>
+          <article class="stat clickable" id="card-stat-events">
+            <span>Eventos &amp; Danos</span>
+            <strong id="stat-events">2.354</strong>
+            <small>Seca, chuvas, pragas e doenças</small>
           </article>
-          <article class="stat">
-            <span>Evidências extraídas</span>
-            <strong id="stat-evidences">—</strong>
-            <small>Trechos com referência estrita de página</small>
+          <article class="stat clickable" id="card-stat-obs">
+            <span>Observações &amp; Medições</span>
+            <strong id="stat-observations">5.230</strong>
+            <small>Precipitação (mm), colheita e produtividade</small>
           </article>
-          <article class="stat">
-            <span>Pesquisadores autorizados</span>
-            <strong id="stat-users">—</strong>
-            <small>Controle de acesso seguro OTP</small>
+          <article class="stat clickable" id="card-stat-muns">
+            <span>Territórios IBGE (RS)</span>
+            <strong id="stat-municipalities">497</strong>
+            <small>356 ocorrências municipais mapeadas</small>
           </article>
-          <article class="stat">
-            <span>Etapa do sistema</span>
-            <strong>v0.2.0</strong>
-            <small>Ingestão documental com proveniência</small>
+          <article class="stat clickable" id="card-stat-vault">
+            <span>Documentos sob Custódia</span>
+            <strong id="stat-documents">34</strong>
+            <small>Informativos 2026 com SHA-256 no cofre</small>
           </article>
         </div>
 
         <div class="factgrid">
           <article class="panel fact">
             <span class="fact-icon">01</span>
-            <h2>Documento original</h2>
-            <p>PDF e identificação da fonte. O arquivo íntegro com SHA-256 verificado, metadados de publicação e guarda privada.</p>
+            <h2>Cold Custody no Cofre</h2>
+            <p>Os arquivos PDF originais ficam guardados no cofre de dados em <code>storage/documents/&lt;sha256&gt;.pdf</code>. A interface foca no conhecimento científico, preservando o documento como âncora probatória permanente.</p>
           </article>
           <article class="panel fact">
             <span class="fact-icon">02</span>
-            <h2>Extração por página</h2>
-            <p>Texto estruturado página a página. Cada parágrafo conserva a numeração física do relatório institucional.</p>
+            <h2>Prova Documental Sob Demanda</h2>
+            <p>Cada linha de evento, observação ou ocorrência territorial dispõe de um botão de <strong>Prova Documental</strong>. Ao clicar, o pesquisador inspeciona a frase exata, o número da página e o contexto no informativo original.</p>
           </article>
           <article class="panel fact">
             <span class="fact-icon">03</span>
-            <h2>Evidências rastreáveis</h2>
-            <p>Afirmações literais separadas de inferências. Cada registro mantém estado epistêmico: extraído, revisado, contestado ou rejeitado.</p>
+            <h2>Integridade Epistêmica SisTer</h2>
+            <p>Diferente de sistemas que inventam fatos via modelos alucinativos, o EVIDA garante separação estrita entre o registro documental relatado e qualquer inferência estatística futura.</p>
           </article>
         </div>
       </section>
 
-      <!-- VIEW: INGESTÃO DOCUMENTAL (v0.2.0) -->
-      <section class="view hidden" id="view-ingestao" aria-labelledby="ingestao-title">
+      <!-- VIEW: EVENTOS & RISCOS -->
+      <section class="view hidden" id="view-eventos" aria-labelledby="eventos-title">
         <div class="pageintro">
           <div>
-            <span class="section-kicker">RECEBIMENTO &amp; EXTRAÇÃO</span>
-            <h1 id="ingestao-title">Ingestão documental com proveniência</h1>
-            <p>Envie arquivos PDF de informativos para calcular SHA-256, extrair texto página a página e catalogar evidências.</p>
+            <span class="section-kicker">FENÔMENOS, PERTURBAÇÕES &amp; DANOS</span>
+            <h1 id="eventos-title">Eventos Climáticos e Sanitários Documentados</h1>
+            <p>Registro histórico de eventos relatados pela Emater/RS ao longo de 2026, com classe de evento, atividade agrícola afetada e proveniência estrita.</p>
           </div>
-          <span class="version-pill" id="ingest-version">INGESTÃO v0.2.0</span>
+          <button class="button outline" id="btn-refresh-events" type="button">↻ Atualizar</button>
         </div>
 
-        <!-- FORMULÁRIO DE ENVIO NO PADRÃO RECEBIMENTO MORFO -->
+        <div class="toolbar-scientific">
+          <label class="searchwrap">
+            <span aria-hidden="true">⌕</span>
+            <input id="events-search" type="search" placeholder="Filtrar eventos por descrição, cultura ou município...">
+          </label>
+          <label class="filterlabel">Classe
+            <select id="events-class-filter" class="select-strategy">
+              <option value="">Todas as classes</option>
+              <option value="seca">Seca</option>
+              <option value="estiagem">Estiagem</option>
+              <option value="excesso_hidrico">Excesso Hídrico</option>
+              <option value="chuva_intensa">Chuva Intensa</option>
+              <option value="geada">Geada</option>
+              <option value="granizo">Granizo</option>
+              <option value="praga">Praga</option>
+              <option value="doenca">Doença</option>
+              <option value="onda_calor">Onda de Calor</option>
+              <option value="vendaval">Vendaval</option>
+            </select>
+          </label>
+          <label class="filterlabel">Região Emater
+            <select id="events-region-filter" class="select-strategy">
+              <option value="">Todas as regiões</option>
+              <option value="Bagé">Bagé</option>
+              <option value="Caxias do Sul">Caxias do Sul</option>
+              <option value="Frederico Westphalen">Frederico Westphalen</option>
+              <option value="Ijuí">Ijuí</option>
+              <option value="Lajeado">Lajeado</option>
+              <option value="Passo Fundo">Passo Fundo</option>
+              <option value="Pelotas">Pelotas</option>
+              <option value="Porto Alegre">Porto Alegre</option>
+              <option value="Santa Maria">Santa Maria</option>
+              <option value="Santa Rosa">Santa Rosa</option>
+              <option value="Soledade">Soledade</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="tablewrap panel">
+          <table class="datatable">
+            <thead>
+              <tr>
+                <th>ID / Data</th>
+                <th>Classe</th>
+                <th>Região / Território</th>
+                <th>Atividade / Cultura</th>
+                <th>Evidência Textual na Fonte</th>
+                <th>Pág.</th>
+                <th>Prova Documental</th>
+              </tr>
+            </thead>
+            <tbody id="events-table-body">
+              <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Carregando eventos científicos…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- VIEW: OBSERVAÇÕES & MÉTRICAS -->
+      <section class="view hidden" id="view-observacoes" aria-labelledby="observacoes-title">
+        <div class="pageintro">
+          <div>
+            <span class="section-kicker">DADOS QUANTITATIVOS &amp; QUALITATIVOS</span>
+            <h1 id="observacoes-title">Observações e Medições de Campo</h1>
+            <p>Medições extraídas dos informativos: precipitação em milímetros, avanço de colheita e semeadura em %, produtividade (kg/ha) e cotações de preços.</p>
+          </div>
+          <button class="button outline" id="btn-refresh-obs" type="button">↻ Atualizar</button>
+        </div>
+
+        <div class="toolbar-scientific">
+          <label class="searchwrap">
+            <span aria-hidden="true">⌕</span>
+            <input id="obs-search" type="search" placeholder="Filtrar por cultura, variável, valor ou evidência...">
+          </label>
+          <label class="filterlabel">Variável
+            <select id="obs-variable-filter" class="select-strategy">
+              <option value="">Todas as variáveis</option>
+              <option value="precipitação">Precipitação</option>
+              <option value="colheita">Colheita (%)</option>
+              <option value="semeadura">Semeadura (%)</option>
+              <option value="produtividade">Produtividade</option>
+              <option value="desenvolvimento vegetativo">Desenv. Vegetativo</option>
+              <option value="floração">Floração</option>
+              <option value="enchimento de grãos">Enchimento de Grãos</option>
+              <option value="maturação">Maturação</option>
+            </select>
+          </label>
+          <label class="filterlabel">Atividade
+            <select id="obs-activity-filter" class="select-strategy">
+              <option value="">Todas as atividades</option>
+              <option value="soja">Soja</option>
+              <option value="milho">Milho</option>
+              <option value="arroz">Arroz</option>
+              <option value="trigo">Trigo</option>
+              <option value="feijão">Feijão</option>
+              <option value="pastagens">Pastagens</option>
+              <option value="bovinocultura de leite">Bovinocultura de Leite</option>
+              <option value="bovinocultura de corte">Bovinocultura de Corte</option>
+              <option value="olerícolas">Olerícolas</option>
+              <option value="fruticultura">Fruticultura</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="tablewrap panel">
+          <table class="datatable">
+            <thead>
+              <tr>
+                <th>ID / Data</th>
+                <th>Atividade</th>
+                <th>Variável / Métrica</th>
+                <th>Valor / Unidade</th>
+                <th>Região / Município</th>
+                <th>Evidência Textual Citada</th>
+                <th>Pág.</th>
+                <th>Prova Documental</th>
+              </tr>
+            </thead>
+            <tbody id="obs-table-body">
+              <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Carregando observações de campo…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- VIEW: TERRITÓRIOS IBGE (RS) -->
+      <section class="view hidden" id="view-territorios" aria-labelledby="territorios-title">
+        <div class="pageintro">
+          <div>
+            <span class="section-kicker">GEOESPACIALIZAÇÃO OFICIAL</span>
+            <h1 id="territorios-title">Municípios do Rio Grande do Sul (IBGE)</h1>
+            <p>Mapeamento dos 497 municípios com código IBGE de 7 dígitos e cruzamento das ocorrências documentadas nos relatórios da Emater.</p>
+          </div>
+          <button class="button outline" id="btn-refresh-muns" type="button">↻ Atualizar</button>
+        </div>
+
+        <div class="territory-grid-layout">
+          <!-- LISTA DE MUNICÍPIOS -->
+          <div class="panel">
+            <div class="section-heading">
+              <div>
+                <h2>Municípios com Ocorrências Relatadas</h2>
+                <p>Selecione um município para inspecionar os registros documentais vinculados.</p>
+              </div>
+            </div>
+            <label class="searchwrap" style="width:100%;margin-bottom:14px;">
+              <span aria-hidden="true">⌕</span>
+              <input id="mun-search" type="search" placeholder="Buscar por município ou código IBGE...">
+            </label>
+            <div class="mun-list-container" id="mun-list">
+              <p style="color:var(--muted);padding:14px;">Carregando municípios do RS…</p>
+            </div>
+          </div>
+
+          <!-- DETALHAMENTO DO MUNICÍPIO SELECIONADO -->
+          <div class="panel" id="mun-detail-panel">
+            <div class="section-heading">
+              <div>
+                <span class="section-kicker" id="mun-detail-kicker">MUNICÍPIO SELECIONADO</span>
+                <h2 id="mun-detail-title">Selecione um município</h2>
+                <p id="mun-detail-subtitle">Ocorrências registradas com evidência literal e página.</p>
+              </div>
+            </div>
+            <div id="mun-occurrences-list">
+              <p style="color:var(--muted);padding:24px;text-align:center;">Nenhum município selecionado. Clique em um município ao lado.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: EPISÓDIOS & SÉRIES TEMPORAIS -->
+      <section class="view hidden" id="view-episodios" aria-labelledby="episodios-title">
+        <div class="pageintro">
+          <div>
+            <span class="section-kicker">DINÂMICA TEMPORAL · JANELAS DE 21 DIAS</span>
+            <h1 id="episodios-title">Episódios e Trajetórias Agronômicas</h1>
+            <p>Agrupamentos temporais contínuos de perturbações, impactos relatados e respostas observadas no campo.</p>
+          </div>
+          <button class="button outline" id="btn-refresh-episodes" type="button">↻ Atualizar</button>
+        </div>
+
+        <div class="tablewrap panel">
+          <table class="datatable">
+            <thead>
+              <tr>
+                <th>ID do Episódio</th>
+                <th>Território</th>
+                <th>Cultura</th>
+                <th>Período (Início / Fim)</th>
+                <th>Perturbação Dominante</th>
+                <th>Impactos &amp; Respostas</th>
+                <th>Docs</th>
+                <th>Confiança</th>
+              </tr>
+            </thead>
+            <tbody id="episodes-table-body">
+              <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Carregando episódios temporais…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- VIEW: COFRE & CUSTÓDIA CRIPTOGRÁFICA -->
+      <section class="view hidden" id="view-custodia" aria-labelledby="custodia-title">
+        <div class="pageintro">
+          <div>
+            <span class="section-kicker">COLD CUSTODY ARCHIVAL LAYER</span>
+            <h1 id="custodia-title">Cofre de Custódia Criptográfica</h1>
+            <p>Repositório frio dos arquivos PDF originais da Emater/RS. Cada documento possui hash SHA-256 de binário e texto normalizado, garantindo a rastreabilidade probatória de todas as extrações.</p>
+          </div>
+          <button class="button outline" id="btn-refresh-vault" type="button">↻ Atualizar</button>
+        </div>
+
+        <!-- DROPZONE PARA RECEBIMENTO DE NOVOS INFORMATIVOS -->
         <div class="panel uploadpanel" style="margin-bottom:24px;">
           <form id="upload-doc-form">
             <div class="section-heading">
               <div>
-                <h2>Enviar arquivos PDF</h2>
-                <p>Selecione informativos da Emater/RS-Ascar para preservação no acervo local e extração de páginas.</p>
+                <h2>Ingerir Novo Informativo no Cofre</h2>
+                <p>O arquivo original será arquivado em <code>storage/documents/&lt;sha256&gt;.pdf</code> com proveniência e texto extraído página a página.</p>
               </div>
             </div>
 
             <div class="operator-badge">
               <span class="op-label">Operador responsável:</span>
               <strong id="operator-email">pesquisador@labeco.local</strong>
-              <small>· Vinculado ao registro de proveniência</small>
+              <small>· Registrado no log imutável de proveniência</small>
             </div>
 
-            <!-- DROPZONE DRAG & DROP -->
             <label class="dropzone" id="dropzone" for="file-input">
               <span class="uploadsymbol" aria-hidden="true">⇧</span>
-              <strong>Arraste o arquivo PDF para esta área</strong>
-              <span>ou clique para selecionar do computador</span>
-              <small>Arquivos PDF · envio progressivo · cálculo instantâneo de SHA-256</small>
+              <strong>Arraste um PDF da Emater aqui</strong>
+              <span>ou clique para selecionar</span>
+              <small>Cálculo instantâneo de SHA-256 e guarda fria</small>
             </label>
             <input class="visually-hidden-file" id="file-input" type="file" accept="application/pdf,.pdf" multiple>
 
-            <div class="formgrid">
-              <label>Título do informativo <small>Opcional · inferido do arquivo se vazio</small>
-                <input type="text" id="doc-title-input" placeholder="Ex.: Informativo Conjuntural nº 1901">
-              </label>
-              <label>Data de publicação <small>Opcional · inferida do nome ou conteúdo</small>
-                <input id="doc-date-input" type="date">
-              </label>
-            </div>
-
-            <div class="selected">
+            <div class="selected" style="margin-top:14px;">
               <strong id="file-count">Nenhum arquivo selecionado</strong>
               <ul id="file-list"></ul>
             </div>
 
-            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px;">
+            <div style="display:flex;gap:12px;margin-top:10px;">
               <button class="button primary" id="btn-send-files" type="submit" disabled>
-                Registrar e Ingerir Documento <span aria-hidden="true">→</span>
-              </button>
-              <button class="button outline" id="btn-quick-sample" type="button">
-                ⚡ Carregar Amostra nº 1901 (41 págs)
+                Registrar no Cofre de Custódia →
               </button>
             </div>
-
             <div class="upload-results" id="upload-results" role="status" aria-live="polite"></div>
           </form>
         </div>
 
-        <!-- TABELA DE DOCUMENTOS CADASTRADOS -->
-        <section class="panel">
+        <!-- TABELA DO COFRE -->
+        <div class="panel">
           <div class="section-heading">
             <div>
-              <span class="section-kicker">ACERVO CADASTRADO</span>
-              <h2>Documentos Preservados</h2>
-              <p>Informativos indexados com assinaturas criptográficas e contagem verificável de evidências.</p>
+              <h2>Documentos Preservados em Custódia (34 Informativos)</h2>
+              <p>Cópias imutáveis mantidas no disco local com integridade matemática.</p>
             </div>
-            <button class="button outline" id="btn-refresh-docs" type="button">↻ Atualizar</button>
           </div>
 
           <div class="tablewrap">
@@ -232,130 +438,28 @@
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Título do Documento</th>
+                  <th>Informativo</th>
                   <th>Data</th>
-                  <th>Assinatura SHA-256</th>
                   <th>Páginas</th>
-                  <th>Evidências</th>
-                  <th>Ações</th>
+                  <th>Caracteres</th>
+                  <th>Assinatura SHA-256 (Binário Original)</th>
+                  <th>Status de Guarda</th>
                 </tr>
               </thead>
-              <tbody id="docs-table-body">
-                <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Carregando documentos indexados…</td></tr>
+              <tbody id="vault-table-body">
+                <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Carregando documentos do cofre…</td></tr>
               </tbody>
             </table>
           </div>
-        </section>
-
-        <!-- INSPECTOR DE PÁGINAS DO DOCUMENTO -->
-        <section class="panel hidden" id="doc-inspector" style="margin-top:24px;">
-          <div class="section-heading">
-            <div>
-              <span class="section-kicker">INSPEÇÃO DE PROVENIÊNCIA</span>
-              <h2 id="inspector-title">Leitor de Páginas e Evidências</h2>
-              <p id="inspector-subtitle">Conferência fiel entre o PDF extraído e as evidências catalogadas.</p>
-            </div>
-            <button class="button outline" id="btn-close-inspector" type="button">Fechar ✕</button>
-          </div>
-
-          <div class="page-selector">
-            <label for="select-page" style="font-size:0.85rem;font-weight:700;">Selecionar página:</label>
-            <select id="select-page" class="select-strategy" style="min-width:140px;"></select>
-            <button class="btn-subtle" id="btn-prev-page" type="button">← Anterior</button>
-            <button class="btn-subtle" id="btn-next-page" type="button">Próxima →</button>
-            <span id="page-indicator" style="font-size:0.82rem;color:var(--muted);margin-left:auto;">Página 1</span>
-          </div>
-
-          <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:20px;margin-top:14px;">
-            <div>
-              <span class="auth-kicker">CONTEÚDO TEXTUAL DA PÁGINA (EXTRAÇÃO FIEL)</span>
-              <pre class="page-text-content" id="page-text-viewer">Carregando conteúdo da página…</pre>
-            </div>
-            <div>
-              <span class="auth-kicker">EVIDÊNCIAS DESTA PÁGINA</span>
-              <div id="page-evidences-list" style="display:grid;gap:12px;margin-top:8px;max-height:520px;overflow-y:auto;">
-                <p style="color:var(--muted);font-size:0.85rem;">Selecione uma página para ver as evidências associadas.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-      </section>
-
-      <!-- VIEW: ACERVO DE EVIDÊNCIAS -->
-      <section class="view hidden" id="view-evidencias" aria-labelledby="evidencias-title">
-        <div class="pageintro">
-          <div>
-            <span class="section-kicker">BASE DE CONHECIMENTO</span>
-            <h1 id="evidencias-title">Acervo de Evidências Documentais</h1>
-            <p>Cada evidência preserva o trecho literal da fonte e sua numeração de página original.</p>
-          </div>
-          <button class="button outline" id="btn-refresh-evidences" type="button">↻ Atualizar</button>
-        </div>
-
-        <div class="toolbar" style="margin-bottom:20px;">
-          <label class="searchwrap">
-            <span class="sr-only">Pesquisar evidências</span>
-            <span aria-hidden="true">⌕</span>
-            <input id="evidence-search" type="search" placeholder="Filtrar por texto, cultura, município...">
-          </label>
-          <div style="display:flex;gap:10px;align-items:center;">
-            <label class="filterlabel">Status
-              <select id="evidence-status-filter" class="select-strategy">
-                <option value="">Todos os status</option>
-                <option value="extracted">Extraído (inicial)</option>
-                <option value="reviewed">Revisado cientificamente</option>
-                <option value="disputed">Contestado / Em dúvida</option>
-                <option value="rejected">Rejeitado</option>
-              </select>
-            </label>
-          </div>
-        </div>
-
-        <div id="evidences-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(360px, 1fr));gap:16px;">
-          <p style="color:var(--muted);padding:24px;">Carregando evidências…</p>
         </div>
       </section>
 
-      <!-- VIEW: INTEGRIDADE & PROVENIÊNCIA -->
-      <section class="view hidden" id="view-integridade" aria-labelledby="integridade-title">
-        <div class="pageintro">
-          <div>
-            <span class="section-kicker">MÉTODO &amp; AUDITORIA</span>
-            <h1 id="integridade-title">Integridade Epistêmica e Proveniência</h1>
-            <p>Critérios de verificabilidade, cadeia de custódia e separação de planos de conhecimento.</p>
-          </div>
-        </div>
-
-        <div class="factgrid">
-          <article class="panel fact">
-            <span class="fact-icon">◈</span>
-            <h2>Hash Criptográfico SHA-256</h2>
-            <p>Cada documento possui sua impressão digital calculada na ingestão. Qualquer alteração de um único byte invalida a cadeia de verificação.</p>
-          </article>
-          <article class="panel fact">
-            <span class="fact-icon">◉</span>
-            <h2>Afirmação vs. Fato</h2>
-            <p>O EVIDA adota a premissa de que uma afirmação em relatório oficial é um <em>registro documental</em> verificado, e não prova dogmática de ocorrência absoluta.</p>
-          </article>
-          <article class="panel fact">
-            <span class="fact-icon">⌁</span>
-            <h2>Rastreabilidade Estrita</h2>
-            <p>Nenhuma evidência existe sem apontar explicitamente para o seu documento de origem e o número exato da página onde consta o texto.</p>
-          </article>
-        </div>
-
-        <div class="notice" style="margin-top:20px;">
-          <strong>Princípio de Reprodução Científica</strong>
-          <p>Diferente de sistemas opacos baseados em modelos generativos fechados, as extrações do EVIDA podem ser auditadas diretamente contra os arquivos PDF públicos da Emater/RS-Ascar.</p>
-        </div>
-      </section>
-
-      <!-- VIEW: SOBRE O EVIDA -->
+      <!-- VIEW: SOBRE & MÉTODO CIENTÍFICO -->
       <section class="view hidden" id="view-sobre" aria-labelledby="sobre-title">
         <div class="pageintro">
           <div>
-            <span class="section-kicker">ARQUITETURA &amp; GOVERNANÇA</span>
-            <h1 id="sobre-title">EVIDA v0.2.0 — Ciência Documental</h1>
+            <span class="section-kicker">GOVERNANÇA METODOLÓGICA &amp; LICENÇA</span>
+            <h1 id="sobre-title">EVIDA v0.3.0 — Ciência Documental</h1>
             <p>Núcleo científico em C++26 construído para o ecossistema SisTer / LABECO.</p>
           </div>
         </div>
@@ -363,10 +467,19 @@
         <div class="panel aboutpanel">
           <div class="about-label">ESTADO ATUAL</div>
           <h2>Sempre pronto. Sempre incompleto.</h2>
-          <p>Pronto para receber informativos da Emater, calcular assinaturas SHA-256, extrair textos preservando páginas e gerenciar evidências rastreáveis sob autenticação com código numérico OTP. Incompleto por decisão: redes complexas de entidades territoriais e inferências bayesianas serão adicionadas com validação incremental.</p>
-          <p style="margin-top:1rem;font-size:0.875rem;color:var(--text-muted, #7c9e8e)">
-            Distribuído sob licença <strong>GNU General Public License v3.0 (GPLv3)</strong>.
-          </p>
+          <p>O EVIDA funciona como observatório rigoroso de relatórios institucionais. Preserva o original como cold custody no cofre, extrai afirmações página a página com proveniência e disponibiliza prova documental auditável sob demanda.</p>
+          
+          <div class="notice" style="margin-top:20px;">
+            <strong>Regra Metodológica Fundamental SisTer:</strong>
+            <p>Uma menção em relatório oficial é evidência de <em>reporte documental</em>, e <strong>não</strong> comprovação empírica automática de que o fenômeno físico ocorreu exatamente daquela maneira. O EVIDA registra quem disse, quando, em que página e em qual contexto.</p>
+          </div>
+
+          <div style="margin-top:24px;padding:18px;background:#f8fafc;border-left:4px solid var(--blue);border-radius:4px;">
+            <strong style="display:block;color:var(--navy);margin-bottom:6px;">Licença de Software Livre: GNU General Public License v3.0 (GPLv3)</strong>
+            <p style="font-size:0.85rem;color:var(--muted);margin:0;">
+              Todo o código-fonte, esquemas SQL, estruturas de proveniência e documentação do EVIDA são software livre distribuído sob os termos da licença <strong>GNU GPLv3</strong>. Copyright (C) 2026 Contribuidores do EVIDA.
+            </p>
+          </div>
 
           <div class="phases" style="margin-top:24px;">
             <div class="phase now">
@@ -376,18 +489,18 @@
             </div>
             <div class="phase now">
               <span>02</span>
-              <strong>Ingestão &amp; Páginas</strong>
+              <strong>Cofre &amp; Custódia</strong>
               <small>v0.2.0: Informativos Emater com extração fiel</small>
             </div>
-            <div class="phase">
+            <div class="phase now">
               <span>03</span>
-              <strong>Territórios &amp; Grafos</strong>
-              <small>Próxima fase: Municípios IBGE e correlações</small>
+              <strong>Corpus Científico Completo</strong>
+              <small>v0.3.0: 5.230 Obs, 2.354 Eventos, 497 Municípios IBGE</small>
             </div>
             <div class="phase">
               <span>04</span>
-              <strong>Análise Científica</strong>
-              <small>Trajetórias, padrões temporais e incertezas</small>
+              <strong>Grafos &amp; Incertezas</strong>
+              <small>Próxima fase: Redes de coocorrência e dinâmicas causais</small>
             </div>
           </div>
         </div>
@@ -433,6 +546,73 @@
 
     </main>
   </div>
+</div>
+
+<!-- AUDIT DRAWER: PROVA DOCUMENTAL SOB DEMANDA -->
+<div id="audit-drawer-overlay" class="drawer-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="audit-drawer-title">
+  <aside class="audit-drawer">
+    <div class="audit-drawer-head">
+      <div>
+        <span class="audit-kicker">SELO PROBATÓRIO CRIPTOGRÁFICO</span>
+        <h2 id="audit-drawer-title">Prova Documental</h2>
+        <span id="audit-entity-badge" class="audit-badge">EVENTO</span>
+      </div>
+      <button type="button" class="close-drawer" id="btn-close-audit" aria-label="Fechar prova documental">✕</button>
+    </div>
+
+    <div class="audit-drawer-body">
+      <!-- CARTÃO DE CUSTÓDIA -->
+      <div class="audit-card">
+        <div class="audit-row">
+          <span class="audit-prop">Documento Fonte:</span>
+          <strong id="audit-doc-name">—</strong>
+        </div>
+        <div class="audit-row">
+          <span class="audit-prop">Publicação / Número:</span>
+          <span id="audit-doc-date">—</span>
+        </div>
+        <div class="audit-row">
+          <span class="audit-prop">Localização:</span>
+          <strong id="audit-page-loc" class="page-badge">Página —</strong>
+        </div>
+        <div class="audit-row">
+          <span class="audit-prop">Status no Cofre:</span>
+          <span id="audit-custody-status" class="custody-tag">✓ Preservado no Cofre</span>
+        </div>
+        <div class="audit-row hash-row">
+          <span class="audit-prop">Assinatura SHA-256:</span>
+          <code id="audit-sha256" class="hash-code">—</code>
+          <button type="button" class="btn-copy-hash" id="btn-copy-sha" title="Copiar hash">Copiar</button>
+        </div>
+      </div>
+
+      <!-- TRECHO LITERAL VERBATIM -->
+      <div class="audit-excerpt-box">
+        <div class="excerpt-heading">
+          <span>TRECHO LITERAL CITADO NA FONTE</span>
+          <button type="button" class="btn-subtle" id="btn-copy-excerpt">Copiar citação</button>
+        </div>
+        <blockquote id="audit-excerpt-text" class="audit-quote">
+          Carregando evidência literal…
+        </blockquote>
+      </div>
+
+      <!-- CONTEXTO INTEGRAL DA PÁGINA EXTRAÍDA -->
+      <div class="audit-page-section">
+        <div class="page-context-head">
+          <span>CONTEXTO INTEGRAL DA PÁGINA (EXTRAÇÃO FIEL DO PDF)</span>
+          <span id="audit-page-num-tag" class="page-badge">Pág. —</span>
+        </div>
+        <pre class="audit-page-pre" id="audit-page-fulltext">Carregando conteúdo textual da página…</pre>
+      </div>
+
+      <!-- ALERTA EPISTÊMICO SISTER -->
+      <div class="audit-epistemic-rule">
+        <small>DIRETRIZ EPISTÊMICA SISTER / LABECO</small>
+        <p>Este trecho constitui evidência documental de relatório técnico institucional. O sistema preserva a proveniência e a integridade da citação, distinguindo-a de inferências analíticas ou extrapolações causais.</p>
+      </div>
+    </div>
+  </aside>
 </div>
 
 <!-- MODAL DE AUTENTICAÇÃO PADRÃO MORFO -->
@@ -512,7 +692,7 @@
     </div>
 
     <div class="auth-foot">
-      <span>EVIDA v0.2.0 · Núcleo C++26</span>
+      <span>EVIDA v0.3.0 · GPLv3 · Núcleo C++26</span>
       <button type="button" class="link-btn" id="btn-dismiss-auth" style="color:var(--muted);font-size:0.75rem;">Dispensar / Explorar ✕</button>
     </div>
   </section>

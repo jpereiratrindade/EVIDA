@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 EVIDA Contributors
+// This file is part of EVIDA - Scientific Evidence Intelligence System
+// Licensed under the GNU General Public License v3.0 or later.
+
 #include "evida/store.hpp"
 #include <sqlite3.h>
 #include <filesystem>
@@ -76,10 +81,27 @@ void Store::migrate() {
   if (v < 2) {
     apply_file(db_, mig_dir / "002_auth_and_ingestion.sql");
   }
+  if (v < 3) {
+    apply_file(db_, mig_dir / "003_scientific_corpus.sql");
+  }
 }
 
 Stats Store::stats() const {
-  return {count_rows(db_, "source_document"), count_rows(db_, "evidence"), count_rows(db_, "users")};
+  Stats s;
+  s.documents = count_rows(db_, "documentos");
+  if (s.documents == 0) {
+    s.documents = count_rows(db_, "source_document");
+  }
+  s.evidences = count_rows(db_, "evidence");
+  s.users = count_rows(db_, "users");
+  s.events = count_rows(db_, "eventos");
+  s.observations = count_rows(db_, "observacoes");
+  s.responses = count_rows(db_, "respostas");
+  s.prices = count_rows(db_, "precos");
+  s.episodes = count_rows(db_, "episodios");
+  s.municipalities = count_rows(db_, "municipios_ibge_rs");
+  s.municipal_occurrences = count_rows(db_, "ocorrencias_municipais");
+  return s;
 }
 
 } // namespace evida

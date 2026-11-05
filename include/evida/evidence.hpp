@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 EVIDA Contributors
+// This file is part of EVIDA - Scientific Evidence Intelligence System
+// Licensed under the GNU General Public License v3.0 or later.
 #pragma once
 #include <cstdint>
 #include <string>

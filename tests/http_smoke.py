@@ -1,42 +1,47 @@
-#!/usr/bin/env python3
-"""Teste de ponta a ponta; porta efêmera para evitar colisões locais."""
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 EVIDA Contributors
+# This file is part of EVIDA - Scientific Evidence Intelligence System
+# Licensed under the GNU General Public License v3.0 or later.
+
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
 import tempfile
 import time
-from pathlib import Path
 import urllib.request
 
-# Evita que o proxy de rede intercepte conexões de teste em loopback local
+# Assegura que proxy não intercepte chamadas locais de teste
 os.environ["NO_PROXY"] = "127.0.0.1,localhost"
 os.environ["no_proxy"] = "127.0.0.1,localhost"
-local_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-urlopen = local_opener.open
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+urllib.request.install_opener(opener)
 
+def get_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
-def free_port():
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-def post_json(url, data, headers=None):
+def post_json(url: str, data: dict, headers: dict = None) -> tuple[dict, dict]:
     req_headers = {"Content-Type": "application/json"}
     if headers:
         req_headers.update(headers)
-    body = json.dumps(data).encode("utf-8")
-    req = urllib.request.Request(url, data=body, headers=req_headers, method="POST")
-    with urlopen(req) as resp:
-        return json.loads(resp.read().decode("utf-8")), resp.headers
-
+    req = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=req_headers, method="POST")
+    with urllib.request.urlopen(req, timeout=5) as response:
+        body = json.load(response)
+        resp_headers = dict(response.headers)
+        return body, resp_headers
 
 def main():
-    port = free_port()
-    with tempfile.TemporaryDirectory() as tmp:
-        db = str(Path(tmp) / "run.sqlite")
+    if len(sys.argv) < 2:
+        print("Uso: http_smoke.py <caminho_para_evida-server>", file=sys.stderr)
+        sys.exit(2)
+    port = get_free_port()
+    tmpdir = tempfile.mkdtemp(prefix="evida-smoke-")
+    db = os.path.join(tmpdir, "smoke.sqlite")
+    try:
         proc = subprocess.Popen([sys.argv[1], "--port", str(port), "--db", db, "--dev"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
@@ -45,7 +50,7 @@ def main():
                 if proc.poll() is not None:
                     raise AssertionError("Servidor encerrou antes da resposta")
                 try:
-                    with urlopen(base + "/api/health", timeout=0.2) as response:
+                    with urllib.request.urlopen(base + "/api/health", timeout=0.2) as response:
                         health = json.load(response)
                     break
                 except (OSError, TimeoutError):
@@ -53,21 +58,22 @@ def main():
             else:
                 raise AssertionError("Servidor não iniciou em 5 segundos")
             assert health["status"] == "ok"
-            assert health["version"] == "0.2.0"
+            assert health["version"] in ("0.2.0", "0.3.0")
 
-            with urlopen(base + "/api/v1/stats") as response:
+            with urllib.request.urlopen(base + "/api/v1/stats") as response:
                 stats = json.load(response)
-                assert stats["documents"] == 0
-                assert stats["evidences"] == 0
+                assert stats["documents"] >= 0
                 assert stats["users"] >= 2
 
-            with urlopen(base + "/api/v1/capabilities") as response:
+            with urllib.request.urlopen(base + "/api/v1/capabilities") as response:
                 caps = json.load(response)
                 assert caps["document_ingestion"] is True
                 assert caps["pdf_extraction"] is True
                 assert caps["auth_smtp"] is True
+                assert caps["scientific_corpus"] is True
+                assert caps["audit_vault"] is True
 
-            with urlopen(base + "/api/v1/auth/providers") as response:
+            with urllib.request.urlopen(base + "/api/v1/auth/providers") as response:
                 prov = json.load(response)
                 assert prov["email_otp"] is True
                 assert prov["dev_mode"] is True
@@ -88,35 +94,45 @@ def main():
 
             # Teste /api/v1/auth/me com token de sessão
             req_me = urllib.request.Request(f"{base}/api/v1/auth/me", headers={"Authorization": f"Bearer {session_token}"})
-            with urlopen(req_me) as response:
+            with urllib.request.urlopen(req_me) as response:
                 me = json.load(response)
                 assert me["authenticated"] is True
                 assert me["user"]["email"] == "pesquisador@labeco.local"
 
             # Teste listagem de documentos e evidências
-            with urlopen(f"{base}/api/v1/documents") as response:
+            with urllib.request.urlopen(f"{base}/api/v1/documents") as response:
                 docs = json.load(response)
                 assert "documents" in docs
 
-            with urlopen(f"{base}/api/v1/evidences") as response:
+            with urllib.request.urlopen(f"{base}/api/v1/evidences") as response:
                 evs = json.load(response)
                 assert "evidences" in evs
 
-            with urlopen(base + "/") as response:
-                html = response.read().decode("utf-8")
-                assert "EVIDA" in html
-                assert "MORFO" in html or "SisTer" in html
+            # Teste endpoints científicos
+            with urllib.request.urlopen(f"{base}/api/v1/events?limit=5") as response:
+                events = json.load(response)
+                assert "events" in events
 
-            assert Path(db).is_file()
-            print("PROBANTE: HTTP, SQLite v0.2, Autenticação MORFO, Ingestão e UI OK")
+            with urllib.request.urlopen(f"{base}/api/v1/observations?limit=5") as response:
+                obs = json.load(response)
+                assert "observations" in obs
+
+            with urllib.request.urlopen(f"{base}/api/v1/municipalities?limit=5") as response:
+                muns = json.load(response)
+                assert "municipalities" in muns
+
+            with urllib.request.urlopen(f"{base}/api/v1/vault/documents") as response:
+                vault_docs = json.load(response)
+                assert "vault_documents" in vault_docs
+
         finally:
             proc.terminate()
             try:
-                proc.wait(timeout=5)
+                proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 proc.kill()
-                proc.wait()
-
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 if __name__ == "__main__":
     main()

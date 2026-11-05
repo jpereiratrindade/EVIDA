@@ -1,5 +1,8 @@
-// EVIDA — Observatório de Evidências Científicas
-// Padrão de Identidade Visual e Ingestão MORFO
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 EVIDA Contributors
+// EVIDA — Sistema Científico de Evidências Documentais e Análise
+// Padrão de Identidade Visual e Ingestão MORFO / SisTer
+// Licenciado sob GNU General Public License v3.0 (GPLv3).
 'use strict';
 
 const $ = id => document.getElementById(id);
@@ -8,17 +11,16 @@ const number = new Intl.NumberFormat('pt-BR');
 
 let currentUser = {email: 'pesquisador@labeco.local', name: 'Pesquisador SisTer', role: 'researcher'};
 let selectedFiles = [];
-let documents = [];
-let evidences = [];
-let currentDoc = null;
-let currentPageNumber = 1;
+let currentMun = null;
 
 const viewNames = {
   visao: 'Visão geral',
-  ingestao: 'Ingestão documental',
-  evidencias: 'Acervo de evidências',
-  integridade: 'Integridade & origem',
-  sobre: 'Sobre o EVIDA',
+  eventos: 'Eventos & Riscos',
+  observacoes: 'Observações & Métricas',
+  territorios: 'Territórios IBGE (RS)',
+  episodios: 'Episódios & Séries',
+  custodia: 'Cofre & Custódia',
+  sobre: 'Sobre & Método',
   usuarios: 'Gestão de Usuários & Acesso'
 };
 
@@ -49,8 +51,12 @@ function nav(view) {
   location.hash = view;
   window.scrollTo(0, 0);
 
-  if (view === 'ingestao') loadDocuments();
-  if (view === 'evidencias') loadEvidences();
+  if (view === 'visao') loadStats();
+  if (view === 'eventos') loadEvents();
+  if (view === 'observacoes') loadObservations();
+  if (view === 'territorios') loadMunicipalities();
+  if (view === 'episodios') loadEpisodes();
+  if (view === 'custodia') loadVaultDocuments();
   if (view === 'usuarios') loadUsers();
 }
 
@@ -98,532 +104,593 @@ function updateUserUI() {
 }
 
 // ----------------- AUTENTICAÇÃO PADRÃO MORFO -----------------
-
-function setAuthFeedback(msg, type = 'error') {
-  const box = $('auth-feedback');
-  if (!msg) { box.classList.add('hidden'); box.textContent = ''; return; }
-  box.className = `auth-feedback ${type}`;
-  box.textContent = msg;
-  box.classList.remove('hidden');
+async function checkAuth() {
+  try {
+    const data = await api('/api/v1/auth/me');
+    if (data.authenticated) {
+      currentUser = data.user;
+      updateUserUI();
+      hideAuthOverlay();
+    } else {
+      currentUser = null;
+      updateUserUI();
+    }
+  } catch (err) {
+    console.warn('Sessão não verificada:', err);
+  }
 }
 
-function showAuthOverlay(infoMsg) {
+function showAuthOverlay() {
   $('auth-overlay').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
-  $('auth-email-form').classList.remove('hidden');
-  $('auth-code-form').classList.add('hidden');
-  $('auth-dev-preview').classList.add('hidden');
-  setAuthFeedback(infoMsg || '', infoMsg ? 'error' : '');
-  setTimeout(() => $('auth-email-input').focus(), 50);
+  $('auth-email-input').focus();
 }
 
 function hideAuthOverlay() {
   $('auth-overlay').classList.add('hidden');
-  document.body.style.overflow = '';
 }
 
-let cooldownTimer = null;
-function startCooldownTimer(seconds = 60) {
-  if (cooldownTimer) clearInterval(cooldownTimer);
-  let remaining = seconds;
-  const resendBtn = $('btn-resend-code');
-  if (!resendBtn) return;
-  resendBtn.disabled = true;
-  resendBtn.textContent = `Aguarde ${remaining}s para reenviar`;
-
-  cooldownTimer = setInterval(() => {
-    remaining -= 1;
-    if (remaining <= 0) {
-      clearInterval(cooldownTimer);
-      cooldownTimer = null;
-      resendBtn.disabled = false;
-      resendBtn.textContent = '↻ Reenviar novo código';
-    } else {
-      resendBtn.textContent = `Aguarde ${remaining}s para reenviar`;
-    }
-  }, 1000);
-}
-
-async function requestAuthCode(e) {
-  if (e && e.preventDefault) e.preventDefault();
-  const emailInput = $('auth-email-input');
-  const email = emailInput.value.trim().toLowerCase();
-  if (!email || !email.includes('@') || !email.includes('.')) {
-    setAuthFeedback('Por favor, informe um endereço de e-mail válido.', 'error');
-    emailInput.focus();
-    return;
-  }
-  const btn = $('btn-request-code');
-  btn.disabled = true;
-  setAuthFeedback('Enviando código de verificação por e-mail...', 'success');
-  try {
-    const res = await api('/api/v1/auth/request-code', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({email})
-    });
-    $('auth-target-email').textContent = email;
-    $('auth-email-form').classList.add('hidden');
-    $('auth-code-form').classList.remove('hidden');
-    if (res.dev_code) {
-      $('auth-dev-preview').classList.remove('hidden');
-      $('auth-dev-code-val').textContent = res.dev_code;
-      $('auth-code-input').value = res.dev_code;
-    } else {
-      $('auth-dev-preview').classList.add('hidden');
-      $('auth-code-input').value = '';
-    }
-    setAuthFeedback(res.message || 'Código enviado! Verifique seu e-mail.', 'success');
-    setTimeout(() => $('auth-code-input').focus(), 50);
-    startCooldownTimer(res.retry_after_seconds || 60);
-  } catch (err) {
-    setAuthFeedback(err.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function verifyAuthCode(e) {
-  if (e && e.preventDefault) e.preventDefault();
-  const email = $('auth-email-input').value.trim().toLowerCase();
-  const code = $('auth-code-input').value.trim();
-  if (code.length !== 6) {
-    setAuthFeedback('O código deve conter 6 dígitos numéricos.', 'error');
-    return;
-  }
-  const btn = $('btn-verify-code');
-  btn.disabled = true;
-  setAuthFeedback('Validando chave de acesso...', 'success');
-  try {
-    const res = await api('/api/v1/auth/verify-code', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({email, code})
-    });
-    currentUser = res.user;
-    updateUserUI();
-    hideAuthOverlay();
-    toast(`Bem-vindo, ${currentUser.name || currentUser.email}!`);
-    loadStats();
-  } catch (err) {
-    setAuthFeedback(err.message, 'error');
-    $('auth-code-input').select();
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function logout() {
-  try {
-    await api('/api/v1/auth/logout', {method: 'POST'});
-  } catch (_) {}
-  currentUser = null;
-  updateUserUI();
-  showAuthOverlay('Você encerrou sua sessão.');
-}
-
-async function checkAuth() {
-  try {
-    const res = await api('/api/v1/auth/me');
-    if (res.authenticated && res.user) {
-      currentUser = res.user;
-    }
-    updateUserUI();
-  } catch (_) {
-    updateUserUI();
-  }
-}
-
-// ----------------- EVIDA STATS & DADOS -----------------
+// ----------------- CARREGAMENTO DE DADOS -----------------
 
 async function loadStats() {
   try {
-    const data = await api('/api/v1/stats');
-    if ($('stat-documents')) $('stat-documents').textContent = number.format(data.documents);
-    if ($('stat-evidences')) $('stat-evidences').textContent = number.format(data.evidences);
-    if ($('stat-users')) $('stat-users').textContent = number.format(data.users);
-  } catch (_) {}
+    const s = await api('/api/v1/stats');
+    if ($('stat-events')) $('stat-events').textContent = number.format(s.events || 0);
+    if ($('stat-observations')) $('stat-observations').textContent = number.format(s.observations || 0);
+    if ($('stat-municipalities')) $('stat-municipalities').textContent = number.format(s.municipalities || 0);
+    if ($('stat-documents')) $('stat-documents').textContent = number.format(s.documents || 0);
+  } catch (err) {
+    console.error('Falha ao obter stats:', err);
+  }
 }
 
-// ----------------- INGESTÃO DOCUMENTAL COM UPLOAD REAL (PADRÃO MORFO) -----------------
+// ----------------- EVENTOS & RISCOS -----------------
+let allEvents = [];
 
-function filesSelected(files) {
-  selectedFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
-  const countEl = $('file-count');
-  const listEl = $('file-list');
-  const sendBtn = $('btn-send-files');
+async function loadEvents() {
+  const tbody = $('events-table-body');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Carregando eventos científicos…</td></tr>';
+  
+  const classe = $('events-class-filter').value;
+  const regiao = $('events-region-filter').value;
+  let url = `/api/v1/events?limit=150`;
+  if (classe) url += `&classe=${encodeURIComponent(classe)}`;
+  if (regiao) url += `&regiao=${encodeURIComponent(regiao)}`;
 
-  if (!selectedFiles.length) {
-    countEl.textContent = 'Nenhum arquivo PDF selecionado';
-    listEl.innerHTML = '';
-    sendBtn.disabled = true;
+  try {
+    const res = await api(url);
+    allEvents = res.events || [];
+    renderEvents();
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#c2410c">Erro ao carregar eventos: ${h(err.message)}</td></tr>`;
+  }
+}
+
+function renderEvents() {
+  const tbody = $('events-table-body');
+  const search = ($('events-search').value || '').toLowerCase().trim();
+  
+  const filtered = allEvents.filter(e => {
+    if (!search) return true;
+    return (e.descricao_evento || '').toLowerCase().includes(search) ||
+           (e.atividade || '').toLowerCase().includes(search) ||
+           (e.municipio || '').toLowerCase().includes(search) ||
+           (e.regiao_emater || '').toLowerCase().includes(search) ||
+           (e.classe_evento || '').toLowerCase().includes(search);
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Nenhum evento localizado com os filtros atuais.</td></tr>';
     return;
   }
 
-  countEl.textContent = `${selectedFiles.length} arquivo(s) PDF preparado(s):`;
-  listEl.innerHTML = selectedFiles.map(f => `
-    <li>
-      <strong>${h(f.name)}</strong>
-      <span>(${formatBytes(f.size)})</span>
-    </li>
-  `).join('');
-  sendBtn.disabled = false;
-
-  // Auto preenche título se único
-  if (selectedFiles.length === 1 && !$('doc-title-input').value) {
-    $('doc-title-input').value = selectedFiles[0].name.replace(/\.[^/.]+$/, '');
-  }
+  tbody.innerHTML = filtered.map(e => {
+    const badgeClass = (e.classe_evento || 'padrao').toLowerCase().replace(/\s+/g, '_');
+    const local = [e.municipio, e.regiao_emater].filter(Boolean).join(' / ') || 'Rio Grande do Sul';
+    return `
+      <tr>
+        <td>
+          <strong style="font-size:0.78rem;color:var(--navy);">${h(e.evento_id)}</strong><br>
+          <small style="color:var(--muted)">${h(e.data_publicacao)}</small>
+        </td>
+        <td><span class="badge-class ${badgeClass}">${h(e.classe_evento || 'Geral')}</span></td>
+        <td><strong>${h(local)}</strong></td>
+        <td>${h(e.atividade || 'Agrícola Geral')}</td>
+        <td style="max-width:440px;line-height:1.45;">
+          <div style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;" title="${h(e.evidencia_textual)}">
+            ${h(e.evidencia_textual || e.descricao_evento)}
+          </div>
+        </td>
+        <td><span class="page-badge">p. ${h(e.pagina)}</span></td>
+        <td>
+          <button type="button" class="btn-subtle" onclick="openAuditProof('${h(e.evento_id)}')">
+            📜 Prova Documental
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
+// ----------------- OBSERVAÇÕES & MÉTRICAS -----------------
+let allObs = [];
 
-async function sendDocFiles(e) {
-  if (e && e.preventDefault) e.preventDefault();
-  if (!selectedFiles.length) return;
+async function loadObservations() {
+  const tbody = $('obs-table-body');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Carregando observações de campo…</td></tr>';
 
-  const btn = $('btn-send-files');
-  btn.disabled = true;
-  const title = $('doc-title-input').value.trim();
-  const pubDate = $('doc-date-input').value;
-  const results = $('upload-results');
-  results.innerHTML = '';
+  const variavel = $('obs-variable-filter').value;
+  const atividade = $('obs-activity-filter').value;
+  let url = `/api/v1/observations?limit=150`;
+  if (variavel) url += `&variavel=${encodeURIComponent(variavel)}`;
+  if (atividade) url += `&atividade=${encodeURIComponent(atividade)}`;
 
-  let successes = 0;
-  for (let i = 0; i < selectedFiles.length; i++) {
-    const file = selectedFiles[i];
-    const status = document.createElement('p');
-    status.className = 'auth-feedback success';
-    status.textContent = `Processando ${i + 1}/${selectedFiles.length}: ${file.name} (calculando hash SHA-256 e extraindo páginas)…`;
-    results.append(status);
-
-    try {
-      const url = new URL('/api/v1/documents/upload', location.href);
-      url.searchParams.set('filename', file.name);
-      if (title) url.searchParams.set('title', title);
-      if (pubDate) url.searchParams.set('publication_date', pubDate);
-
-      const res = await api(url.pathname + url.search, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/octet-stream'},
-        body: file
-      });
-
-      status.textContent = `✓ ${file.name}: preservado com SHA-256 (${res.total_pages} págs, ${res.extracted_evidences} evidências extraídas).`;
-      successes++;
-      if (res.document_id) {
-        setTimeout(() => openDocInspector(res.document_id), 300);
-      }
-    } catch (err) {
-      status.className = 'auth-feedback error';
-      status.textContent = `✕ ${file.name}: ${err.message}`;
-    }
-  }
-
-  btn.disabled = false;
-  toast(`${successes} de ${selectedFiles.length} documento(s) indexado(s) com sucesso.`);
-  loadStats();
-  await loadDocuments();
-
-  if (successes === selectedFiles.length) {
-    $('upload-doc-form').reset();
-    filesSelected([]);
-  }
-}
-
-async function loadDocuments() {
-  const tbody = $('docs-table-body');
   try {
-    const data = await api('/api/v1/documents');
-    documents = data.documents || [];
-    if (!documents.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Nenhum documento indexado ainda. Envie um PDF no formulário acima ou carregue a amostra.</td></tr>';
+    const res = await api(url);
+    allObs = res.observations || [];
+    renderObservations();
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:#c2410c">Erro ao carregar observações: ${h(err.message)}</td></tr>`;
+  }
+}
+
+function renderObservations() {
+  const tbody = $('obs-table-body');
+  const search = ($('obs-search').value || '').toLowerCase().trim();
+
+  const filtered = allObs.filter(o => {
+    if (!search) return true;
+    return (o.variavel || '').toLowerCase().includes(search) ||
+           (o.atividade || '').toLowerCase().includes(search) ||
+           (o.valor || '').toLowerCase().includes(search) ||
+           (o.regiao_emater || '').toLowerCase().includes(search) ||
+           (o.evidencia_textual || '').toLowerCase().includes(search);
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Nenhuma observação localizada com os filtros atuais.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(o => {
+    const metricStr = [o.valor, o.unidade].filter(Boolean).join(' ') || '—';
+    const regiaoStr = [o.municipio, o.regiao_emater].filter(Boolean).join(' / ') || 'RS';
+    return `
+      <tr>
+        <td>
+          <strong style="font-size:0.78rem;color:var(--navy);">${h(o.observacao_id)}</strong><br>
+          <small style="color:var(--muted)">${h(o.data_publicacao)}</small>
+        </td>
+        <td><strong>${h(o.atividade || 'Geral')}</strong></td>
+        <td>${h(o.variavel || '—')}</td>
+        <td><strong style="color:var(--blue);">${h(metricStr)}</strong></td>
+        <td>${h(regiaoStr)}</td>
+        <td style="max-width:380px;line-height:1.45;">
+          <div style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;" title="${h(o.evidencia_textual)}">
+            ${h(o.evidencia_textual)}
+          </div>
+        </td>
+        <td><span class="page-badge">p. ${h(o.pagina)}</span></td>
+        <td>
+          <button type="button" class="btn-subtle" onclick="openAuditProof('${h(o.observacao_id)}')">
+            📜 Prova Documental
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ----------------- TERRITÓRIOS IBGE (RS) -----------------
+let allMuns = [];
+
+async function loadMunicipalities() {
+  const container = $('mun-list');
+  container.innerHTML = '<p style="color:var(--muted);padding:14px;">Carregando municípios do RS…</p>';
+  try {
+    const res = await api('/api/v1/municipalities?limit=500');
+    allMuns = res.municipalities || [];
+    renderMunicipalities();
+    if (allMuns.length > 0 && !currentMun) {
+      selectMunicipality(allMuns[0].codigo_ibge, allMuns[0].municipio);
+    }
+  } catch (err) {
+    container.innerHTML = `<p style="color:#c2410c;padding:14px;">Erro ao carregar municípios: ${h(err.message)}</p>`;
+  }
+}
+
+function renderMunicipalities() {
+  const container = $('mun-list');
+  const search = ($('mun-search').value || '').toLowerCase().trim();
+
+  const filtered = allMuns.filter(m => {
+    if (!search) return true;
+    return m.municipio.toLowerCase().includes(search) || m.codigo_ibge.includes(search);
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<p style="color:var(--muted);padding:14px;">Nenhum município encontrado.</p>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(m => {
+    const activeClass = (currentMun && currentMun.codigo === m.codigo_ibge) ? 'active' : '';
+    const occBadge = m.occurrences_count > 0 
+      ? `<span class="mun-count-badge">${m.occurrences_count} ocorrências</span>`
+      : `<span style="font-size:0.7rem;color:var(--muted)">0 ocorrências</span>`;
+    return `
+      <div class="mun-item ${activeClass}" onclick="selectMunicipality('${h(m.codigo_ibge)}', '${h(m.municipio)}')">
+        <div>
+          <strong>${h(m.municipio)}</strong>
+          <small>IBGE: ${h(m.codigo_ibge)} · ${h(m.uf)}</small>
+        </div>
+        ${occBadge}
+      </div>
+    `;
+  }).join('');
+}
+
+async function selectMunicipality(codigo, nome) {
+  currentMun = {codigo, nome};
+  $('mun-detail-title').textContent = `${nome} (${codigo})`;
+  $('mun-detail-kicker').textContent = 'MUNICÍPIO IBGE ' + codigo;
+  const listEl = $('mun-occurrences-list');
+  listEl.innerHTML = '<p style="color:var(--muted);padding:24px;text-align:center;">Carregando ocorrências documentais…</p>';
+
+  // Atualiza classe ativa na lista
+  renderMunicipalities();
+
+  try {
+    const res = await api(`/api/v1/occurrences?codigo_ibge=${codigo}&limit=50`);
+    const ocs = res.occurrences || [];
+    if (ocs.length === 0) {
+      listEl.innerHTML = `
+        <div style="padding:28px 16px;text-align:center;background:#f8fafc;border-radius:8px;border:1px dashed var(--line);">
+          <strong style="color:var(--navy);display:block;margin-bottom:6px;">Nenhuma ocorrência documentada explícita em 2026</strong>
+          <p style="color:var(--muted);font-size:0.84rem;margin:0;">
+            O município de ${h(nome)} pertence à base dos 497 municípios do RS, mas não teve menção nominal isolada nos informativos de 2026 analisados até agora.
+          </p>
+        </div>
+      `;
       return;
     }
-    tbody.innerHTML = documents.map(d => `
+
+    listEl.innerHTML = `
+      <div style="display:grid;gap:12px;">
+        ${ocs.map(o => {
+          const badgeClass = (o.classe_ocorrencia || 'padrao').toLowerCase();
+          return `
+            <div style="border:1px solid var(--line);border-radius:8px;padding:14px;background:#fff;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <span class="badge-class ${badgeClass}">${h(o.classe_ocorrencia)}</span>
+                  ${o.subclasse_ocorrencia ? `<small style="color:var(--muted);font-weight:700;">${h(o.subclasse_ocorrencia)}</small>` : ''}
+                </div>
+                <small style="color:var(--muted);font-weight:600;">${h(o.data_publicacao)} · p. ${h(o.pagina)}</small>
+              </div>
+              <p style="margin:6px 0 10px;font-size:0.88rem;line-height:1.5;color:var(--ink);border-left:3px solid var(--sky);padding-left:10px;">
+                ${h(o.evidencia_textual)}
+              </p>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <small style="color:var(--muted)">Documento: <strong>${h(o.documento)}</strong></small>
+                <button type="button" class="btn-subtle" onclick="openAuditProof('${h(o.ocorrencia_id)}')">
+                  📜 Prova Documental
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  } catch (err) {
+    listEl.innerHTML = `<p style="color:#c2410c;padding:20px;">Erro ao carregar ocorrências: ${h(err.message)}</p>`;
+  }
+}
+
+// ----------------- EPISÓDIOS & TRAJETÓRIAS -----------------
+async function loadEpisodes() {
+  const tbody = $('episodes-table-body');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Carregando episódios temporais…</td></tr>';
+
+  try {
+    const res = await api('/api/v1/episodes?limit=100');
+    const eps = res.episodes || [];
+    if (eps.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Nenhum episódio cadastrado.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = eps.map(e => `
       <tr>
-        <td><strong>#${d.id}</strong></td>
-        <td><strong>${h(d.title)}</strong><br><small style="color:var(--muted)">${h(d.source_uri)}</small></td>
-        <td>${h(d.publication_date || '—')}</td>
-        <td><code class="doc-hash-badge" title="${h(d.sha256)}">${h(d.sha256.substring(0, 16))}…</code></td>
-        <td><span class="evidence-page-tag">${d.total_pages} págs</span></td>
-        <td><strong>${d.evidence_count}</strong> evidências</td>
-        <td>
-          <button type="button" class="btn-subtle" onclick="openDocInspector(${d.id})">🔍 Inspecionar</button>
+        <td><strong style="color:var(--navy);font-size:0.8rem;">${h(e.episodio_id)}</strong></td>
+        <td><strong>${h(e.territorio || 'Geral')}</strong></td>
+        <td>${h(e.atividade || 'Geral')}</td>
+        <td style="white-space:nowrap;font-size:0.78rem;">${h(e.data_inicio)} → ${h(e.data_fim)}</td>
+        <td><span class="badge-class ${e.perturbacao ? e.perturbacao.toLowerCase() : 'padrao'}">${h(e.perturbacao || 'Perturbação')}</span></td>
+        <td style="max-width:380px;font-size:0.82rem;line-height:1.4;">
+          ${e.impactos_observados ? `<div><strong>Impacto:</strong> ${h(e.impactos_observados)}</div>` : ''}
+          ${e.respostas_observadas ? `<div style="color:#15803d;margin-top:2px;"><strong>Resposta:</strong> ${h(e.respostas_observadas)}</div>` : ''}
         </td>
+        <td style="text-align:center;"><strong>${e.numero_documentos}</strong></td>
+        <td><span class="quality">${h(e.nivel_confianca || 'MÉDIA')}</span></td>
       </tr>
     `).join('');
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#b91c1c;padding:20px;">Falha ao carregar documentos: ${h(err.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:#c2410c">Erro ao carregar episódios: ${h(err.message)}</td></tr>`;
   }
 }
 
-async function ingestSampleDocument() {
-  const results = $('upload-results');
-  if (results) {
-    results.innerHTML = '<p class="auth-feedback success">Extraindo Informativo nº 1901 com Poppler C++26 (41 páginas)…</p>';
-  }
-  toast('Iniciando extração do Informativo Conjuntural de referência…');
+// ----------------- COFRE & CUSTÓDIA CRIPTOGRÁFICA -----------------
+async function loadVaultDocuments() {
+  const tbody = $('vault-table-body');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Carregando documentos do cofre…</td></tr>';
 
   try {
-    const res = await api('/api/v1/documents/ingest-sample', {method: 'POST'});
-    toast(`Sucesso! Documento #${res.document_id} indexado (${res.total_pages} páginas, ${res.extracted_evidences} evidências).`);
-    if (results) {
-      results.innerHTML = `<p class="auth-feedback success">✓ Sucesso! Informativo nº 1901 indexado: ${res.total_pages} páginas e ${res.extracted_evidences} evidências catalogadas.</p>`;
-    }
-    loadStats();
-    await loadDocuments();
-    nav('ingestao');
-    openDocInspector(res.document_id);
-  } catch (err) {
-    toast(`Erro na extração: ${err.message}`);
-    if (results) {
-      results.innerHTML = `<p class="auth-feedback error">✕ Falha na extração: ${h(err.message)}</p>`;
-    }
-  }
-}
-
-// ----------------- INSPECTOR DE PÁGINAS & PROVENIÊNCIA -----------------
-
-window.openDocInspector = async function(docId) {
-  try {
-    const data = await api(`/api/v1/documents/${docId}`);
-    currentDoc = data.document;
-    const pages = data.pages || [];
-
-    const inspector = $('doc-inspector');
-    inspector.classList.remove('hidden');
-    $('inspector-title').textContent = currentDoc.title;
-    $('inspector-subtitle').textContent = `Assinatura SHA-256: ${currentDoc.sha256} · Total: ${currentDoc.total_pages} páginas`;
-
-    const select = $('select-page');
-    select.innerHTML = pages.map(p => `<option value="${p.page}">Página ${p.page}</option>`).join('');
-    currentPageNumber = 1;
-    select.value = '1';
-    await loadPageContent(docId, 1);
-    inspector.scrollIntoView({behavior: 'smooth'});
-  } catch (err) {
-    toast(`Erro ao inspecionar documento: ${err.message}`);
-  }
-};
-
-async function loadPageContent(docId, pageNumber) {
-  const viewer = $('page-text-viewer');
-  const evList = $('page-evidences-list');
-  $('page-indicator').textContent = `Página ${pageNumber} de ${currentDoc ? currentDoc.total_pages : '—'}`;
-  viewer.textContent = 'Carregando conteúdo da página…';
-  evList.innerHTML = '<p style="color:var(--muted)">Consultando evidências desta página…</p>';
-
-  try {
-    const pData = await api(`/api/v1/documents/${docId}/pages/${pageNumber}`);
-    viewer.textContent = pData.page.text || '(Página vazia ou sem texto selecionável)';
-
-    const evData = await api(`/api/v1/evidences?doc_id=${docId}`);
-    const pageEvs = (evData.evidences || []).filter(e => e.page === pageNumber);
-
-    if (!pageEvs.length) {
-      evList.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;">Nenhuma evidência isolada nesta página específica.</p>';
-    } else {
-      evList.innerHTML = pageEvs.map(e => `
-        <div class="evidence-card" style="padding:12px;">
-          <div class="evidence-meta">
-            <span class="pill ${e.status}">${e.status}</span>
-            <small>${e.reviewer ? 'Revisor: ' + h(e.reviewer) : 'Extração automática'}</small>
-          </div>
-          <p class="evidence-excerpt" style="font-size:0.82rem;">${h(e.excerpt)}</p>
-          <div class="evidence-actions">
-            <button class="btn-subtle" onclick="changeEvidenceStatus(${e.id}, 'reviewed')">✓ Confirmar</button>
-            <button class="btn-subtle" onclick="changeEvidenceStatus(${e.id}, 'disputed')">? Contestar</button>
-          </div>
-        </div>
-      `).join('');
-    }
-  } catch (err) {
-    viewer.textContent = `Falha ao carregar conteúdo da página: ${err.message}`;
-  }
-}
-
-// ----------------- ACERVO DE EVIDÊNCIAS -----------------
-
-async function loadEvidences() {
-  const container = $('evidences-grid');
-  const statusFilter = $('evidence-status-filter') ? $('evidence-status-filter').value : '';
-  const search = $('evidence-search') ? $('evidence-search').value.trim().toLowerCase() : '';
-
-  try {
-    const query = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '';
-    const data = await api(`/api/v1/evidences${query}`);
-    let list = data.evidences || [];
-
-    if (search) {
-      list = list.filter(e => e.excerpt.toLowerCase().includes(search) || e.doc_title.toLowerCase().includes(search));
-    }
-
-    if (!list.length) {
-      container.innerHTML = '<p style="color:var(--muted);padding:24px;">Nenhuma evidência encontrada para os filtros selecionados.</p>';
+    const res = await api('/api/v1/vault/documents');
+    const docs = res.vault_documents || [];
+    if (docs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Nenhum documento sob custódia no cofre.</td></tr>';
       return;
     }
 
-    container.innerHTML = list.map(e => `
-      <article class="evidence-card">
-        <div class="evidence-meta">
-          <span class="evidence-page-tag">Pág. ${e.page}</span>
-          <span class="pill ${e.status}">${e.status}</span>
-          <code class="doc-hash-badge" title="${h(e.doc_sha256)}">${h(e.doc_sha256.substring(0, 8))}…</code>
-        </div>
-        <p class="evidence-excerpt">${h(e.excerpt)}</p>
-        <small style="color:var(--muted);font-size:0.75rem;">Fonte: ${h(e.doc_title)} · ${e.reviewer || 'sistema'}</small>
-        <div class="evidence-actions">
-          <button type="button" class="btn-subtle" onclick="changeEvidenceStatus(${e.id}, 'reviewed')" title="Marcar como revisado">✓ Revisar</button>
-          <button type="button" class="btn-subtle" onclick="changeEvidenceStatus(${e.id}, 'disputed')" title="Marcar como contestado / incerteza">? Contestar</button>
-          <button type="button" class="btn-subtle danger" onclick="changeEvidenceStatus(${e.id}, 'rejected')" title="Rejeitar evidência">✕ Rejeitar</button>
-        </div>
-      </article>
-    `).join('');
+    tbody.innerHTML = docs.map(d => {
+      const statusHtml = d.in_vault
+        ? '<span class="custody-tag">✓ Preservado no cofre</span>'
+        : '<span style="background:#fee2e2;color:#991b1b;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:800;">Ausente no cofre</span>';
+      return `
+        <tr>
+          <td><strong style="color:var(--navy);font-size:0.78rem;">${h(d.documento_id)}</strong></td>
+          <td>
+            <strong>Informativo Conjuntural nº ${h(d.numero_informativo)}</strong><br>
+            <small style="color:var(--muted)">${h(d.arquivo)}</small>
+          </td>
+          <td>${h(d.data_publicacao)}</td>
+          <td><strong>${d.numero_paginas}</strong> págs</td>
+          <td style="font-size:0.78rem;color:var(--muted);">${number.format(d.caracteres_extraidos)}</td>
+          <td>
+            <code class="hash-code" style="max-width:280px;display:inline-block;" title="${h(d.sha256)}">${h(d.sha256)}</code>
+          </td>
+          <td>${statusHtml}</td>
+        </tr>
+      `;
+    }).join('');
   } catch (err) {
-    container.innerHTML = `<p style="color:#b91c1c;padding:20px;">Falha ao carregar evidências: ${h(err.message)}</p>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#c2410c">Erro ao carregar documentos do cofre: ${h(err.message)}</td></tr>`;
   }
 }
 
-window.changeEvidenceStatus = async function(evidenceId, newStatus) {
+// ----------------- AUDIT DRAWER (PROVA DOCUMENTAL SOB DEMANDA) -----------------
+async function openAuditProof(entityId) {
+  const overlay = $('audit-drawer-overlay');
+  overlay.classList.remove('hidden');
+
+  $('audit-drawer-title').textContent = `Prova Documental: ${entityId}`;
+  $('audit-entity-badge').textContent = entityId.split('-')[0] || 'REGISTRO';
+  $('audit-doc-name').textContent = 'Carregando…';
+  $('audit-doc-date').textContent = 'Carregando…';
+  $('audit-page-loc').textContent = 'Página —';
+  $('audit-sha256').textContent = '—';
+  $('audit-excerpt-text').textContent = 'Carregando evidência literal citada na fonte…';
+  $('audit-page-fulltext').textContent = 'Carregando contexto integral da página…';
+
   try {
-    await api(`/api/v1/evidences/${evidenceId}/status`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({status: newStatus})
-    });
-    toast(`Evidência #${evidenceId} atualizada para ${newStatus}`);
-    if (currentDoc) {
-      loadPageContent(currentDoc.id, currentPageNumber);
+    const res = await api(`/api/v1/evidence/${encodeURIComponent(entityId)}/audit`);
+    const p = res.proof;
+    if (!p) throw new Error('Dados de auditoria não localizados');
+
+    $('audit-doc-name').textContent = `${p.arquivo || p.documento_id} (Informativo nº ${p.numero_informativo || '—'})`;
+    $('audit-doc-date').textContent = `Publicado em ${p.data_publicacao || '—'}`;
+    $('audit-page-loc').textContent = `Página ${p.pagina || '—'}`;
+    $('audit-page-num-tag').textContent = `Pág. ${p.pagina || '—'}`;
+    $('audit-sha256').textContent = p.sha256 || '—';
+    $('audit-sha256').title = p.sha256;
+    $('audit-excerpt-text').textContent = p.evidencia_textual || '—';
+
+    // Contexto com destaque do trecho
+    if (p.page_text) {
+      renderPageWithHighlight(p.page_text, p.evidencia_textual);
+    } else {
+      $('audit-page-fulltext').textContent = 'Texto integral da página não extraído ou indisponível.';
     }
-    loadEvidences();
+
+    $('btn-copy-sha').onclick = () => {
+      navigator.clipboard.writeText(p.sha256);
+      toast('Hash SHA-256 copiado para a área de transferência!');
+    };
+
+    $('btn-copy-excerpt').onclick = () => {
+      const cite = `"${p.evidencia_textual}" (Informativo Conjuntural Emater/RS nº ${p.numero_informativo}, ${p.data_publicacao}, p. ${p.pagina})`;
+      navigator.clipboard.writeText(cite);
+      toast('Citação com proveniência copiada!');
+    };
+
   } catch (err) {
-    toast(`Erro ao atualizar evidência: ${err.message}`);
+    $('audit-doc-name').textContent = 'Erro ao carregar';
+    $('audit-excerpt-text').textContent = `Não foi possível auditar a prova documental: ${err.message}`;
+    $('audit-page-fulltext').textContent = '—';
   }
-};
+}
+
+function renderPageWithHighlight(pageText, excerpt) {
+  const container = $('audit-page-fulltext');
+  if (!excerpt || !pageText.includes(excerpt)) {
+    container.textContent = pageText;
+    return;
+  }
+  const parts = pageText.split(excerpt);
+  container.innerHTML = parts.map((part, i) => {
+    if (i === 0) return h(part);
+    return `<mark class="audit-highlight">${h(excerpt)}</mark>` + h(part);
+  }).join('');
+}
+
+function closeAuditDrawer() {
+  $('audit-drawer-overlay').classList.add('hidden');
+}
 
 // ----------------- GESTÃO DE USUÁRIOS -----------------
-
 async function loadUsers() {
   const tbody = $('users-table-body');
-  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">Carregando usuários…</td></tr>';
   try {
-    const data = await api('/api/v1/auth/users');
-    const users = data.users || [];
-    if (!users.length) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">Nenhum usuário cadastrado.</td></tr>';
-      return;
-    }
+    const res = await api('/api/v1/auth/users');
+    const users = res.users || [];
     tbody.innerHTML = users.map(u => `
       <tr>
         <td><strong>${h(u.name)}</strong></td>
-        <td>${h(u.email)}</td>
-        <td><span class="pill">${h(u.role)}</span></td>
-        <td><span class="pill ${u.is_active ? 'reviewed' : 'rejected'}">${u.is_active ? 'Ativo' : 'Inativo'}</span></td>
-        <td>${h(u.last_login_at || 'Nunca')}</td>
+        <td><code>${h(u.email)}</code></td>
+        <td><span class="badge-class ${u.role === 'admin' ? 'onda_calor' : 'climatica'}">${h(u.role)}</span></td>
+        <td><span class="custody-tag">${u.is_active ? 'Ativo' : 'Inativo'}</span></td>
+        <td><small style="color:var(--muted)">${h(u.last_login_at)}</small></td>
       </tr>
     `).join('');
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#b91c1c;padding:20px;">Falha ao listar usuários: ${h(err.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:#c2410c">Erro ao carregar usuários: ${h(err.message)}</td></tr>`;
   }
 }
 
-// ----------------- INICIALIZAÇÃO -----------------
+// ----------------- ENVIO E UPLOAD DE ARQUIVOS (INGESTÃO NO COFRE) -----------------
+function initUpload() {
+  const fileInput = $('file-input');
+  const dropzone = $('dropzone');
+  const fileList = $('file-list');
+  const fileCount = $('file-count');
+  const sendBtn = $('btn-send-files');
 
-document.addEventListener('DOMContentLoaded', () => {
-  // Navegação
-  for (const b of document.querySelectorAll('[data-view]')) {
-    b.addEventListener('click', () => nav(b.dataset.view));
+  if (!fileInput || !dropzone) return;
+
+  function handleFiles(files) {
+    selectedFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf') || f.type === 'application/pdf');
+    fileCount.textContent = selectedFiles.length > 0 
+      ? `${selectedFiles.length} arquivo(s) PDF selecionado(s)` 
+      : 'Nenhum arquivo selecionado';
+    fileList.innerHTML = selectedFiles.map(f => `<li><strong>${h(f.name)}</strong> (${(f.size / 1024 / 1024).toFixed(2)} MB)</li>`).join('');
+    sendBtn.disabled = selectedFiles.length === 0;
   }
+
+  fileInput.addEventListener('change', e => handleFiles(e.target.files));
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.classList.remove('drag');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  $('upload-doc-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (selectedFiles.length === 0) return;
+    const results = $('upload-results');
+    results.innerHTML = '<p>Transmitindo arquivo e calculando SHA-256 no cofre…</p>';
+    sendBtn.disabled = true;
+
+    for (const file of selectedFiles) {
+      try {
+        const bytes = await file.arrayBuffer();
+        const url = `/api/v1/documents/upload?filename=${encodeURIComponent(file.name)}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/pdf'},
+          body: bytes
+        });
+        const data = await res.json();
+        if (res.ok) {
+          results.innerHTML += `<p>✓ <strong>${h(file.name)}</strong> arquivado com sucesso no cofre (SHA-256: <code>${h(data.sha256.slice(0, 16))}…</code>, ${data.total_pages} págs).</p>`;
+          toast(`Informativo ${file.name} arquivado no cofre!`);
+        } else {
+          results.innerHTML += `<p class="fail">✕ Falha em ${h(file.name)}: ${h(data.error || 'Erro desconhecido')}</p>`;
+        }
+      } catch (err) {
+        results.innerHTML += `<p class="fail">✕ Erro de conexão em ${h(file.name)}: ${h(err.message)}</p>`;
+      }
+    }
+    selectedFiles = [];
+    fileCount.textContent = 'Nenhum arquivo selecionado';
+    fileList.innerHTML = '';
+    loadVaultDocuments();
+    loadStats();
+  });
+}
+
+// ----------------- INICIALIZAÇÃO DO SISTEMA -----------------
+document.addEventListener('DOMContentLoaded', () => {
+  // Configuração da Navegação
+  for (const btn of document.querySelectorAll('[data-view]')) {
+    btn.addEventListener('click', () => nav(btn.dataset.view));
+  }
+
+  // Hero shortcuts
+  $('hero-go-events').onclick = () => nav('eventos');
+  $('hero-go-territories').onclick = () => nav('territorios');
+  $('hero-go-vault').onclick = () => nav('custodia');
+
+  // Stat card clicks
+  $('card-stat-events').onclick = () => nav('eventos');
+  $('card-stat-obs').onclick = () => nav('observacoes');
+  $('card-stat-muns').onclick = () => nav('territorios');
+  $('card-stat-vault').onclick = () => nav('custodia');
+
+  // Filtros de Eventos
+  $('events-class-filter').onchange = () => loadEvents();
+  $('events-region-filter').onchange = () => loadEvents();
+  $('events-search').oninput = () => renderEvents();
+  $('btn-refresh-events').onclick = () => loadEvents();
+
+  // Filtros de Observações
+  $('obs-variable-filter').onchange = () => loadObservations();
+  $('obs-activity-filter').onchange = () => loadObservations();
+  $('obs-search').oninput = () => renderObservations();
+  $('btn-refresh-obs').onclick = () => loadObservations();
+
+  // Filtros de Municípios
+  $('mun-search').oninput = () => renderMunicipalities();
+  $('btn-refresh-muns').onclick = () => loadMunicipalities();
+
+  // Episódios & Cofre
+  $('btn-refresh-episodes').onclick = () => loadEpisodes();
+  $('btn-refresh-vault').onclick = () => loadVaultDocuments();
+  if ($('btn-refresh-users')) $('btn-refresh-users').onclick = () => loadUsers();
+
+  // Drawer de Auditoria
+  $('btn-close-audit').onclick = closeAuditDrawer;
+  $('audit-drawer-overlay').addEventListener('click', e => {
+    if (e.target === $('audit-drawer-overlay')) closeAuditDrawer();
+  });
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeAuditDrawer();
+  });
+
+  // Mobile drawer
+  $('menu').onclick = () => {
+    $('sidebar').classList.toggle('open');
+    $('mobile-scrim').classList.toggle('shown');
+  };
+  $('mobile-scrim').onclick = () => {
+    $('sidebar').classList.remove('open');
+    $('mobile-scrim').classList.remove('shown');
+  };
+
+  // Autenticação MORFO
+  $('btn-logout').onclick = async () => {
+    await fetch('/api/v1/auth/logout', {method: 'POST'}).catch(() => {});
+    currentUser = null;
+    updateUserUI();
+    toast('Sessão encerrada com sucesso.');
+  };
+
+  $('btn-dismiss-auth').onclick = hideAuthOverlay;
+
+  // Inicia upload
+  initUpload();
+
+  // Roteamento via Hash
   const hash = location.hash.replace('#', '');
   if (viewNames[hash]) nav(hash);
   else nav('visao');
 
-  // Menu móvel
-  $('menu').addEventListener('click', () => {
-    const open = $('sidebar').classList.toggle('open');
-    $('mobile-scrim').classList.toggle('shown', open);
-    $('menu').setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
-  $('mobile-scrim').addEventListener('click', () => {
-    $('sidebar').classList.remove('open');
-    $('mobile-scrim').classList.remove('shown');
-    $('menu').setAttribute('aria-expanded', 'false');
-  });
-
-  // Autenticação
-  $('auth-email-form').addEventListener('submit', requestAuthCode);
-  $('auth-code-form').addEventListener('submit', verifyAuthCode);
-  $('btn-resend-code').addEventListener('click', requestAuthCode);
-  $('btn-back-email').addEventListener('click', () => {
-    $('auth-code-form').classList.add('hidden');
-    $('auth-email-form').classList.remove('hidden');
-    $('auth-email-input').focus();
-  });
-  $('btn-dismiss-auth').addEventListener('click', hideAuthOverlay);
-  $('btn-logout').addEventListener('click', logout);
-
-  // Ingestão e Upload Drag & Drop
-  const dropzone = $('dropzone');
-  const fileInput = $('file-input');
-  if (fileInput) {
-    fileInput.addEventListener('change', () => filesSelected(fileInput.files));
-  }
-  if (dropzone) {
-    ['dragenter', 'dragover'].forEach(name => {
-      dropzone.addEventListener(name, e => { e.preventDefault(); dropzone.classList.add('drag'); });
-    });
-    ['dragleave', 'drop'].forEach(name => {
-      dropzone.addEventListener(name, e => { e.preventDefault(); dropzone.classList.remove('drag'); });
-    });
-    dropzone.addEventListener('drop', e => {
-      if (e.dataTransfer && e.dataTransfer.files.length) {
-        filesSelected(e.dataTransfer.files);
-      }
-    });
-  }
-
-  if ($('upload-doc-form')) $('upload-doc-form').addEventListener('submit', sendDocFiles);
-  if ($('hero-go-ingest')) $('hero-go-ingest').addEventListener('click', () => nav('ingestao'));
-  if ($('hero-sample-ingest')) $('hero-sample-ingest').addEventListener('click', ingestSampleDocument);
-  if ($('btn-quick-sample')) $('btn-quick-sample').addEventListener('click', ingestSampleDocument);
-  if ($('btn-refresh-docs')) $('btn-refresh-docs').addEventListener('click', loadDocuments);
-
-  // Inspector
-  $('btn-close-inspector').addEventListener('click', () => $('doc-inspector').classList.add('hidden'));
-  $('select-page').addEventListener('change', e => {
-    currentPageNumber = parseInt(e.target.value, 10);
-    if (currentDoc) loadPageContent(currentDoc.id, currentPageNumber);
-  });
-  $('btn-prev-page').addEventListener('click', () => {
-    if (currentPageNumber > 1) {
-      currentPageNumber--;
-      $('select-page').value = String(currentPageNumber);
-      if (currentDoc) loadPageContent(currentDoc.id, currentPageNumber);
-    }
-  });
-  $('btn-next-page').addEventListener('click', () => {
-    if (currentDoc && currentPageNumber < currentDoc.total_pages) {
-      currentPageNumber++;
-      $('select-page').value = String(currentPageNumber);
-      loadPageContent(currentDoc.id, currentPageNumber);
-    }
-  });
-
-  // Evidências
-  if ($('btn-refresh-evidences')) $('btn-refresh-evidences').addEventListener('click', loadEvidences);
-  if ($('evidence-status-filter')) $('evidence-status-filter').addEventListener('change', loadEvidences);
-  if ($('evidence-search')) $('evidence-search').addEventListener('input', loadEvidences);
-
-  // Gestão de Usuários
-  if ($('btn-refresh-users')) $('btn-refresh-users').addEventListener('click', loadUsers);
-
-  // Verifica estado inicial
+  // Valida autenticação inicial
   checkAuth();
-  loadStats();
 });
+
+// Exporta para chamadas inline
+window.openAuditProof = openAuditProof;
+window.selectMunicipality = selectMunicipality;
