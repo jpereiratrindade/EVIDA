@@ -100,22 +100,52 @@
             <span class="eyebrow">OBSERVAR · PRESERVAR · EVIDENCIAR</span>
             <h1 id="visao-title">Evidências científicas com <em>prova documental verificável.</em></h1>
             <p>Corpus dos Informativos Conjunturais da Emater/RS-Ascar (2026). Cada evento climático, métrica produtiva e menção municipal é indexada como evidência documental com vínculo criptográfico ao PDF fonte original.</p>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
               <button class="button white" id="hero-go-events" type="button">⌁ Explorar Eventos &amp; Riscos <span aria-hidden="true">→</span></button>
-              <button class="button outline" id="hero-go-territories" type="button" style="color:#fff;border-color:#ffffff44;">⌖ Municípios IBGE</button>
-              <button class="button outline" id="hero-go-vault" type="button" style="color:#fff;border-color:#ffffff44;">◫ Cofre de Custódia</button>
+              <button class="button outline-hero" id="hero-go-territories" type="button">⌖ Municípios IBGE</button>
+              <button class="button outline-hero" id="hero-go-vault" type="button">◫ Cofre de Custódia</button>
             </div>
           </div>
           <svg class="hero-network" viewBox="0 0 260 224" aria-hidden="true">
-            <g fill="none" stroke="currentColor" stroke-width="1.6">
-              <path d="M130 12 235 72v80l-105 60L25 152V72zM130 12v200M25 72l210 80M235 72 25 152" opacity=".45"/>
-              <path d="M130 45v80m0 0-43 30m43-30 40 30m-83 0-14 35m14-35 17 35m66-35 18 35m-18-35-16 35" stroke-width="3.5"/>
+            <!-- Camadas de Custódia e Órbitas Criptográficas EVIDA -->
+            <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Órbitas Concéntricas de Verificação SHA-256 -->
+              <circle cx="130" cy="112" r="92" stroke-width="1.2" stroke-opacity="0.22" stroke-dasharray="4 6"/>
+              <circle cx="130" cy="112" r="68" stroke-width="1.5" stroke-opacity="0.35"/>
+              <circle cx="130" cy="112" r="44" stroke-width="1.8" stroke-opacity="0.55"/>
+              
+              <!-- Malha Epistêmica Externa (Documentos & Territórios) -->
+              <polygon points="130,22 210,68 210,156 130,202 50,156 50,68" stroke-width="1.6" stroke-opacity="0.45"/>
+              <line x1="130" y1="22" x2="130" y2="202" stroke-width="1.2" stroke-opacity="0.25"/>
+              <line x1="50" y1="68" x2="210" y2="156" stroke-width="1.2" stroke-opacity="0.25"/>
+              <line x1="50" y1="156" x2="210" y2="68" stroke-width="1.2" stroke-opacity="0.25"/>
+
+              <!-- Tríade Probatória Central (Documento <-> Evidência <-> Dado Científico) -->
+              <polygon points="130,58 178,144 82,144" stroke-width="2.6" stroke-opacity="0.85"/>
+              <polygon points="130,166 82,80 178,80" stroke-width="1.5" stroke-opacity="0.45" stroke-dasharray="3 3"/>
+              <line x1="130" y1="58" x2="130" y2="166" stroke-width="2" stroke-opacity="0.7"/>
+              <line x1="82" y1="80" x2="178" y2="144" stroke-width="2" stroke-opacity="0.7"/>
+              <line x1="178" y1="80" x2="82" y2="144" stroke-width="2" stroke-opacity="0.7"/>
             </g>
+            <!-- Vértices e Nós de Evidência -->
             <g fill="currentColor">
-              <circle cx="130" cy="125" r="6"/>
-              <circle cx="87" cy="155" r="4"/>
-              <circle cx="170" cy="155" r="4"/>
-              <circle cx="130" cy="45" r="4"/>
+              <!-- Núcleo de Custódia Probatória -->
+              <circle cx="130" cy="112" r="7"/>
+              <!-- Vértices da Tríade de Prova Documental -->
+              <circle cx="130" cy="58" r="5.5"/>
+              <circle cx="178" cy="144" r="5.5"/>
+              <circle cx="82" cy="144" r="5.5"/>
+              <!-- Nós Satélites -->
+              <circle cx="82" cy="80" r="4.5"/>
+              <circle cx="178" cy="80" r="4.5"/>
+              <circle cx="130" cy="166" r="4.5"/>
+              <!-- Vértices da Malha Externa -->
+              <circle cx="130" cy="22" r="3.5"/>
+              <circle cx="210" cy="68" r="3.5"/>
+              <circle cx="210" cy="156" r="3.5"/>
+              <circle cx="130" cy="202" r="3.5"/>
+              <circle cx="50" cy="156" r="3.5"/>
+              <circle cx="50" cy="68" r="3.5"/>
             </g>
           </svg>
         </div>

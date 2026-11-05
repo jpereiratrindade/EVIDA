@@ -936,10 +936,15 @@ int main(int argc, char* argv[]) {
   try {
     unsigned long port = 18142;
     std::string dbfile = "var/evida.sqlite";
+    std::string host = "127.0.0.1";
     bool dev_mode = false;
     for (int i = 1; i < argc; ++i) {
       if (std::string_view(argv[i]) == "--port" && i + 1 < argc) {
         port = std::stoul(argv[++i]);
+      } else if (std::string_view(argv[i]) == "--host" && i + 1 < argc) {
+        host = argv[++i];
+      } else if (std::string_view(argv[i]) == "--lan" || std::string_view(argv[i]) == "--public") {
+        host = "0.0.0.0";
       } else if (std::string_view(argv[i]) == "--db" && i + 1 < argc) {
         dbfile = argv[++i];
       } else if (std::string_view(argv[i]) == "--dev") {
@@ -959,8 +964,8 @@ int main(int argc, char* argv[]) {
         }
         return 0;
       } else if (std::string_view(argv[i]) == "--help") {
-        std::cout << "EVIDA v0.3.1 — Observatório de Evidências Científicas\n";
-        std::cout << "Uso: evida-server [--port 18142] [--db var/evida.sqlite] [--dev|--prod]\n";
+        std::cout << "EVIDA v" << evida::VERSION << " (" << evida::RELEASE_NAME << ") — Observatório de Evidências Científicas\n";
+        std::cout << "Uso: evida-server [--host 127.0.0.1|0.0.0.0] [--lan] [--port 18142] [--db var/evida.sqlite] [--dev|--prod]\n";
         std::cout << "                  [--add-user <email> <nome> <role>]\n";
         return 0;
       } else {
@@ -975,9 +980,13 @@ int main(int argc, char* argv[]) {
     evida::auth::AuthSmtpService auth_service(auth_config);
 
     net::io_context io{1};
-    // Segurança restrita: vincula EXCLUSIVAMENTE ao loopback 127.0.0.1
-    tcp::acceptor acceptor(io, {net::ip::make_address("127.0.0.1"), static_cast<unsigned short>(port)});
-    std::cout << "EVIDA v" << evida::VERSION << " (" << evida::RELEASE_NAME << ") em http://127.0.0.1:" << port << " [DevMode=" << (dev_mode ? "ON" : "OFF") << "]" << std::endl;
+    // Vinculação de rede configurável: loopback 127.0.0.1 (padrão) ou rede local 0.0.0.0
+    auto bind_address = net::ip::make_address(host);
+    tcp::acceptor acceptor(io, {bind_address, static_cast<unsigned short>(port)});
+    std::cout << "EVIDA v" << evida::VERSION << " (" << evida::RELEASE_NAME << ") em http://" << host << ":" << port << " [DevMode=" << (dev_mode ? "ON" : "OFF") << "]" << std::endl;
+    if (host == "0.0.0.0") {
+      std::cout << "-> Acesso em rede local ativado (0.0.0.0:" << port << ")." << std::endl;
+    }
 
     for (;;) {
       tcp::socket socket(io);
