@@ -1,0 +1,41 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\usepackage{hyperref}
+\geometry{margin=2.5cm}
+\title{EVIDA\\Especificação Científica e Arquitetural\\\large ARCH-001, versão 0.1.0}
+\author{Documento de projeto em desenvolvimento}
+\date{5 de novembro de 2026}
+\begin{document}
+\maketitle
+\section{Missão}
+Construir um sistema científico independente para analisar fontes documentais,
+com núcleo C++26, interface web leve e trilha de proveniência reproduzível.
+O primeiro corpus é composto por Informativos Conjunturais da Emater/RS-Ascar.
+\section{Fronteiras}
+A aplicação não representa a instituição que produziu os documentos.
+O acervo original permanece imutável; o código e os dados privados são separados.
+O sistema não depende do NEXO, MÉTIS ou MORFO para operar.
+\section{Epistemologia operacional}
+Uma menção documental não equivale a uma ocorrência independente.
+Uma coocorrência textual não implica relação causal ou proximidade espacial.
+Toda interpretação é separada de sua fonte e da validação humana.
+\section{Componentes}
+\begin{itemize}
+\item \texttt{evida-core}: regras de evidência, proveniência e armazenamento.
+\item \texttt{evida-server}: API HTTP local em C++26.
+\item \texttt{web/}: interface estática, identidade visual original inspirada no MORFO.
+\item \texttt{storage/}: migrações SQL versionadas.
+\item \texttt{tests/}: invariantes e testes de integração PROBANTE.
+\end{itemize}
+\section{Governança da migração}
+Preservar o pipeline Python em diretório próprio de referência. Registrar
+hash SHA-256 do arquivo histórico. Não importar dados automaticamente. A
+migração só será considerada equivalente após comparação de resultados
+com a mesma taxonomia, as mesmas fontes e os mesmos parâmetros.
+\section{Limites da versão 0.1.0}
+Sem ingestão de PDFs, análise de redes, autenticação ou acesso em rede externa.
+Escuta apenas em \texttt{127.0.0.1}; banco inicia sem documentos e evidências.
+\end{document}

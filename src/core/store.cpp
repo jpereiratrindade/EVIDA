@@ -1,0 +1,85 @@
+#include "evida/store.hpp"
+#include <sqlite3.h>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace evida {
+namespace {
+
+void execute(sqlite3* db, const std::string& sql) {
+  char* error = nullptr;
+  if (sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &error) != SQLITE_OK) {
+    std::string message = error ? error : "Erro SQL";
+    sqlite3_free(error);
+    throw std::runtime_error(message);
+  }
+}
+
+int get_user_version(sqlite3* db) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &stmt, nullptr) != SQLITE_OK) return 0;
+  int v = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) v = sqlite3_column_int(stmt, 0);
+  sqlite3_finalize(stmt);
+  return v;
+}
+
+int count_rows(sqlite3* db, const char* table) {
+  const std::string sql = std::string("SELECT count(*) FROM ") + table;
+  sqlite3_stmt* statement = nullptr;
+  if (sqlite3_prepare_v2(db, sql.c_str(), -1, &statement, nullptr) != SQLITE_OK)
+    return 0;
+  int value = 0;
+  if (sqlite3_step(statement) == SQLITE_ROW) value = sqlite3_column_int(statement, 0);
+  sqlite3_finalize(statement);
+  return value;
+}
+
+void apply_file(sqlite3* db, const std::filesystem::path& path) {
+  std::ifstream file(path);
+  if (!file) throw std::runtime_error("Migração SQL ausente: " + path.string());
+  const std::string sql((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  execute(db, sql);
+}
+
+} // namespace
+
+Store::Store(const std::string& filename) {
+  if (filename != ":memory:") {
+    const auto parent = std::filesystem::path(filename).parent_path();
+    if (!parent.empty()) std::filesystem::create_directories(parent);
+  }
+  if (sqlite3_open(filename.c_str(), &db_) != SQLITE_OK) {
+    const std::string why = db_ ? sqlite3_errmsg(db_) : "sqlite3_open";
+    if (db_) sqlite3_close(db_);
+    db_ = nullptr;
+    throw std::runtime_error("Não foi possível abrir o banco: " + why);
+  }
+  try { migrate(); } catch (...) { sqlite3_close(db_); db_ = nullptr; throw; }
+}
+
+Store::~Store() { if (db_) sqlite3_close(db_); }
+
+void Store::migrate() {
+  execute(db_, "PRAGMA foreign_keys=ON;");
+  const auto mig_dir = std::filesystem::path(EVIDA_MIGRATIONS_DIR);
+  int v = get_user_version(db_);
+
+  if (v < 1) {
+    apply_file(db_, mig_dir / "001_initial.sql");
+  }
+  if (v < 2) {
+    apply_file(db_, mig_dir / "002_auth_and_ingestion.sql");
+  }
+}
+
+Stats Store::stats() const {
+  return {count_rows(db_, "source_document"), count_rows(db_, "evidence"), count_rows(db_, "users")};
+}
+
+} // namespace evida

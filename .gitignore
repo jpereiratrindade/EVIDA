@@ -1,0 +1,15 @@
+/build/
+/var/
+/reference/
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.pdf
+*.zip
+*.pyc
+__pycache__/
+.DS_Store
