@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS "document_blob" (
   "storage_path" TEXT NOT NULL,
   "registered_at" TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "verified_at" TEXT,
-  "status" TEXT NOT NULL DEFAULT 'verified' CHECK(status IN ('verified', 'corrupted', 'missing'))
+  "status" TEXT NOT NULL DEFAULT 'verified' CHECK(status IN ('verified', 'corrupted', 'missing', 'verified_intact', 'corrupted_tampered'))
 );
 CREATE INDEX IF NOT EXISTS idx_blob_status ON document_blob(status);
 
