@@ -4,6 +4,7 @@
 // Licensed under the GNU General Public License v3.0 or later.
 
 #include "evida/store.hpp"
+#include "evida/corpus.hpp"
 #include <sqlite3.h>
 #include <filesystem>
 #include <fstream>
@@ -84,6 +85,10 @@ void Store::migrate() {
   if (v < 3) {
     apply_file(db_, mig_dir / "003_scientific_corpus.sql");
   }
+  if (v < 4) {
+    apply_file(db_, mig_dir / "004_document_custody_provenance.sql");
+  }
+  evida::corpus::backfill_provenance_if_needed(db_);
 }
 
 Stats Store::stats() const {

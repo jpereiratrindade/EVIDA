@@ -561,7 +561,7 @@
     </div>
 
     <div class="audit-drawer-body">
-      <!-- CARTÃO DE CUSTÓDIA -->
+      <!-- CARTÃO DE CUSTÓDIA E INTEGRIDADE DINÂMICA -->
       <div class="audit-card">
         <div class="audit-row">
           <span class="audit-prop">Documento Fonte:</span>
@@ -576,14 +576,28 @@
           <strong id="audit-page-loc" class="page-badge">Página —</strong>
         </div>
         <div class="audit-row">
-          <span class="audit-prop">Status no Cofre:</span>
-          <span id="audit-custody-status" class="custody-tag">✓ Preservado no Cofre</span>
+          <span class="audit-prop">Integridade dos Bytes (Recalculada Agora):</span>
+          <span id="audit-custody-status" class="custody-tag">✓ Verificado Íntegro no Disco</span>
+        </div>
+        <div class="audit-row">
+          <span class="audit-prop">Tamanho do PDF:</span>
+          <span id="audit-blob-size" style="font-weight:600;font-size:0.8rem;color:var(--navy);">—</span>
+        </div>
+        <div class="audit-row">
+          <span class="audit-prop">Execução do Extrator:</span>
+          <small id="audit-extraction-run" style="font-weight:600;color:var(--muted);">—</small>
         </div>
         <div class="audit-row hash-row">
           <span class="audit-prop">Assinatura SHA-256:</span>
           <code id="audit-sha256" class="hash-code">—</code>
           <button type="button" class="btn-copy-hash" id="btn-copy-sha" title="Copiar hash">Copiar</button>
         </div>
+      </div>
+
+      <!-- VÍNCULOS PROBATÓRIOS MÚLTIPLOS (M:N) -->
+      <div id="audit-multiple-links-box" class="panel hidden" style="padding:14px;background:#f0f9ff;border-color:#bae6fd;">
+        <span class="audit-kicker" style="color:#0284c7;">VÍNCULOS PROBATÓRIOS ASSOCIADOS A ESTE DADO</span>
+        <div id="audit-links-list" style="display:grid;gap:8px;margin-top:8px;"></div>
       </div>
 
       <!-- TRECHO LITERAL VERBATIM -->
@@ -595,6 +609,23 @@
         <blockquote id="audit-excerpt-text" class="audit-quote">
           Carregando evidência literal…
         </blockquote>
+      </div>
+
+      <!-- PAINEL DE REVISÃO HUMANA CIENTÍFICA -->
+      <div class="panel" style="padding:14px;background:#f8fafc;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <span class="audit-kicker" style="color:var(--navy);">REGISTRO DE REVISÃO CIENTÍFICA HUMANA</span>
+          <span id="review-status-badge" class="badge-class produtiva">Extraído</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <select id="review-decision-select" class="select-strategy">
+            <option value="reviewed">Validar / Revisado Cientificamente</option>
+            <option value="disputed">Contestar / Requer Averiguação</option>
+            <option value="rejected">Rejeitar / Não Confiável</option>
+          </select>
+          <input type="text" id="review-notes-input" placeholder="Justificativa ou nota metodológica..." style="flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:0.8rem;">
+          <button type="button" class="btn-subtle" id="btn-submit-review">Registrar Parecer</button>
+        </div>
       </div>
 
       <!-- CONTEXTO INTEGRAL DA PÁGINA EXTRAÍDA -->

@@ -8,6 +8,7 @@
 #include "evida/evidence.hpp"
 #include "evida/ingest.hpp"
 #include "evida/store.hpp"
+#include <sqlite3.h>
 
 #include <boost/asio.hpp>
 #include <boost/beast/core.hpp>
@@ -397,18 +398,43 @@ std::string audit_proof_to_json(const evida::corpus::AuditProofItem& p) {
      << ",\"evidencia_textual\":" << q(p.evidencia_textual)
      << ",\"sha256\":" << q(p.sha256)
      << ",\"sha256_texto_normalizado\":" << q(p.sha256_texto_normalizado)
-     << ",\"in_vault\":" << (p.in_vault ? "true" : "false")
-     << ",\"status_custodia\":" << (p.in_vault ? "\"preservado_no_cofre\"" : "\"ausente_no_cofre\"")
-     << ",\"integridade_criptografica\":\"SHA-256 verificado\""
+     << ",\"evidence_span_id\":" << q(p.evidence_span_id)
+     << ",\"text_sha256\":" << q(p.text_sha256)
+     << ",\"extraction_run_id\":" << q(p.extraction_run_id)
+     << ",\"extractor_name\":" << q(p.extractor_name)
+     << ",\"extractor_version\":" << q(p.extractor_version)
+     << ",\"extraction_params\":" << q(p.extraction_params)
+     << ",\"executed_at\":" << q(p.executed_at)
+     << ",\"blob_integrity\":{"
+     << "\"exists\":" << (p.blob_integrity.exists ? "true" : "false")
+     << ",\"matches_sha256\":" << (p.blob_integrity.matches_sha256 ? "true" : "false")
+     << ",\"byte_size\":" << p.blob_integrity.byte_size
+     << ",\"recalculated_sha256\":" << q(p.blob_integrity.recalculated_sha256)
+     << ",\"status\":" << q(p.blob_integrity.status) << "}"
+     << ",\"in_vault\":" << (p.blob_integrity.matches_sha256 ? "true" : "false")
+     << ",\"status_custodia\":" << (p.blob_integrity.matches_sha256 ? "\"verificado_integro_no_cofre\"" : (p.blob_integrity.exists ? "\"corrompido_adulterado\"" : "\"ausente_no_cofre\""))
+     << ",\"integridade_criptografica\":\"SHA-256 verificado dinamicamente sobre bytes do disco\""
      << ",\"metodologia\":\"Evidência documental de reporte (não comprovação causal automática)\""
-     << ",\"page_text\":" << q(p.page_text)
+     << ",\"links\":[";
+  for (std::size_t i = 0; i < p.links.size(); ++i) {
+    if (i > 0) ss << ",";
+    const auto& l = p.links[i];
+    ss << "{\"link_id\":" << q(l.link_id)
+       << ",\"evidence_id\":" << q(l.evidence_id)
+       << ",\"link_type\":" << q(l.link_type)
+       << ",\"notes\":" << q(l.notes)
+       << ",\"document_id\":" << q(l.document_id)
+       << ",\"page_number\":" << l.page_number
+       << ",\"verbatim_text\":" << q(l.verbatim_text) << "}";
+  }
+  ss << "],\"page_text\":" << q(p.page_text)
      << "}}";
   return ss.str();
 }
 
 http::response<http::string_body> respond(http::status status, unsigned version, const std::string& body, std::string_view content_type = "application/json") {
   http::response<http::string_body> res{status, version};
-  res.set(http::field::server, "evida/0.3.0");
+  res.set(http::field::server, "evida/0.3.1");
   res.set(http::field::cache_control, "no-store");
   res.set("X-Content-Type-Options", "nosniff");
   res.set(http::field::content_type, std::string(content_type));
@@ -439,7 +465,7 @@ http::response<http::string_body> handle_request(const http::request<http::strin
 
   // 2. Health & Capabilities
   if (req.method() == http::verb::get && path == "/api/health") {
-    return respond(http::status::ok, v, "{\"status\":\"ok\",\"system\":\"evida\",\"version\":\"0.3.0\"}");
+    return respond(http::status::ok, v, "{\"status\":\"ok\",\"system\":\"evida\",\"version\":\"0.3.1\"}");
   }
 
   if (req.method() == http::verb::get && path == "/api/v1/capabilities") {
@@ -447,7 +473,8 @@ http::response<http::string_body> handle_request(const http::request<http::strin
       "{\"document_ingestion\":true,\"pdf_extraction\":true,"
       "\"graph_analysis\":true,\"episode_review\":true,"
       "\"sqlite_schema\":true,\"provenance_rules\":true,\"auth_smtp\":true,"
-      "\"scientific_corpus\":true,\"audit_vault\":true}");
+      "\"scientific_corpus\":true,\"audit_vault\":true,"
+      "\"dynamic_byte_verification\":true,\"unified_provenance\":true}");
   }
 
   if (req.method() == http::verb::get && path == "/api/v1/stats") {
@@ -783,6 +810,35 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     return respond(http::status::ok, v, audit_proof_to_json(*proof));
   }
 
+  // 5.9 Human Scientific Review Decision (Preserva extração original)
+  if (req.method() == http::verb::post && path.starts_with("/api/v1/evidence/") && path.ends_with("/review")) {
+    std::string id = path.substr(std::string("/api/v1/evidence/").size());
+    id = id.substr(0, id.rfind("/review"));
+    std::string token = extract_token(req);
+    auto user = auth_service.validate_session(store.db(), token);
+    std::string reviewer = user ? user->email : "pesquisador@labeco.local";
+
+    std::string status = json_extract_string(req.body(), "status");
+    std::string justification = json_extract_string(req.body(), "justification");
+    if (status.empty()) status = "reviewed";
+
+    const char* ins = "INSERT INTO review_decision (decision_id, record_type, record_id, reviewer, status, justification) "
+                      "VALUES (?, 'evidence', ?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(store.db(), ins, -1, &stmt, nullptr) == SQLITE_OK) {
+      std::string dec_id = "dec-" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+      sqlite3_bind_text(stmt, 1, dec_id.c_str(), -1, SQLITE_STATIC);
+      sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_STATIC);
+      sqlite3_bind_text(stmt, 3, reviewer.c_str(), -1, SQLITE_STATIC);
+      sqlite3_bind_text(stmt, 4, status.c_str(), -1, SQLITE_STATIC);
+      sqlite3_bind_text(stmt, 5, justification.c_str(), -1, SQLITE_STATIC);
+      sqlite3_step(stmt);
+      sqlite3_finalize(stmt);
+      return respond(http::status::ok, v, "{\"status\":\"ok\",\"decision_id\":" + q(dec_id) + ",\"new_status\":" + q(status) + "}");
+    }
+    return respond(http::status::internal_server_error, v, "{\"error\":\"failed_to_save_review\"}");
+  }
+
   // 6. Evidences legacy API
   if (req.method() == http::verb::get && path == "/api/v1/evidences") {
     int64_t doc_id = 0;
@@ -859,7 +915,7 @@ int main(int argc, char* argv[]) {
   try {
     unsigned long port = 18142;
     std::string dbfile = "var/evida.sqlite";
-    bool dev_mode = true;
+    bool dev_mode = false;
     for (int i = 1; i < argc; ++i) {
       if (std::string_view(argv[i]) == "--port" && i + 1 < argc) {
         port = std::stoul(argv[++i]);
@@ -882,7 +938,7 @@ int main(int argc, char* argv[]) {
         }
         return 0;
       } else if (std::string_view(argv[i]) == "--help") {
-        std::cout << "EVIDA v0.3.0 — Observatório de Evidências Científicas\n";
+        std::cout << "EVIDA v0.3.1 — Observatório de Evidências Científicas\n";
         std::cout << "Uso: evida-server [--port 18142] [--db var/evida.sqlite] [--dev|--prod]\n";
         std::cout << "                  [--add-user <email> <nome> <role>]\n";
         return 0;
@@ -898,8 +954,9 @@ int main(int argc, char* argv[]) {
     evida::auth::AuthSmtpService auth_service(auth_config);
 
     net::io_context io{1};
-    tcp::acceptor acceptor(io, {net::ip::make_address("0.0.0.0"), static_cast<unsigned short>(port)});
-    std::cout << "EVIDA v0.3.0 em http://127.0.0.1:" << port << " [DevMode=" << (dev_mode ? "ON" : "OFF") << "]" << std::endl;
+    // Segurança restrita: vincula EXCLUSIVAMENTE ao loopback 127.0.0.1
+    tcp::acceptor acceptor(io, {net::ip::make_address("127.0.0.1"), static_cast<unsigned short>(port)});
+    std::cout << "EVIDA v0.3.1 em http://127.0.0.1:" << port << " [DevMode=" << (dev_mode ? "ON" : "OFF") << "]" << std::endl;
 
     for (;;) {
       tcp::socket socket(io);

@@ -5,14 +5,19 @@
 
 #include "evida/evidence.hpp"
 #include "evida/auth.hpp"
+#include "evida/corpus.hpp"
 #include "evida/ingest.hpp"
 #include "evida/store.hpp"
+#include <sqlite3.h>
 #include <cassert>
 #include <cstdio>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+
+namespace fs = std::filesystem;
 
 int main() {
   // 1. Validação de evidência e integridade epistêmica
@@ -27,11 +32,10 @@ int main() {
   if (std::string(evida::status_name(evida::EvidenceStatus::disputed)) != "disputed") return 4;
 
   try {
-    // 2. Banco e Migrações v0.1 + v0.2
+    // 2. Banco e Migrações v0.1 + v0.2 + v0.3 + v0.4
     evida::Store store(":memory:");
     auto stats = store.stats();
-    if (stats.documents != 0 || stats.evidences != 0) return 5;
-    if (stats.users < 2) return 6; // Seeded users: admin and pesquisador
+    if (stats.users < 2) return 5; // Seeded users: admin and pesquisador
 
     // 3. Teste de Autenticação Padrão MORFO (OTP SMTP / Dev Mode)
     evida::auth::AuthSmtpConfig auth_cfg;
@@ -39,50 +43,108 @@ int main() {
     auth_cfg.simulated = true;
     evida::auth::AuthSmtpService auth(auth_cfg);
 
-    // Request code para pesquisador@labeco.local
     auto req_res = auth.request_code(store.db(), "pesquisador@labeco.local", "127.0.0.1");
-    if (!req_res.ok || req_res.dev_code.size() != 6) {
-      std::cerr << "Falha no request_code: " << req_res.user_message << "\n";
-      return 7;
-    }
+    if (!req_res.ok || req_res.dev_code.size() != 6) return 6;
 
-    // Verify code correto
     auto ver_res = auth.verify_code(store.db(), "pesquisador@labeco.local", req_res.dev_code, "127.0.0.1");
-    if (!ver_res.ok || ver_res.session_token.empty()) {
-      std::cerr << "Falha no verify_code: " << ver_res.user_message << "\n";
-      return 8;
-    }
+    if (!ver_res.ok || ver_res.session_token.empty()) return 7;
 
-    // Validação de sessão ativa
     auto sess_user = auth.validate_session(store.db(), ver_res.session_token);
-    if (!sess_user || sess_user->email != "pesquisador@labeco.local") return 9;
+    if (!sess_user || sess_user->email != "pesquisador@labeco.local") return 8;
 
-    // Revogação de sessão (logout)
-    if (!auth.revoke_session(store.db(), ver_res.session_token)) return 10;
-    if (auth.validate_session(store.db(), ver_res.session_token).has_value()) return 11;
+    if (!auth.revoke_session(store.db(), ver_res.session_token)) return 9;
+    if (auth.validate_session(store.db(), ver_res.session_token).has_value()) return 10;
 
-    // 4. Teste de Adição e Atualização de Evidência com Proveniência
-    // Simula documento inserido
-    evida::ingest::IngestOptions opts;
-    opts.title = "Documento Teste";
-    opts.publication_date = "2026-11-05";
-    opts.source_uri = "https://labeco.local/doc/teste.pdf";
+    // 4. Teste de Conferência Dinâmica de Bytes (Custódia & Adulteração)
+    fs::path test_storage = "storage/documents";
+    fs::create_directories(test_storage);
 
-    // Criamos um arquivo temporário de teste
-    std::string tmp_pdf = "/tmp/evida_test_dummy.txt";
+    std::string test_content = "CONTEUDO ORIGINAL DO DOCUMENTO TESTE DE AUDITORIA.";
+    std::string test_sha = evida::ingest::compute_bytes_sha256(test_content);
+    fs::path test_file = test_storage / (test_sha + ".pdf");
+
     {
-      std::ofstream f(tmp_pdf);
-      f << "Linha de teste para extração de evidência documental com proveniência.";
+      std::ofstream out(test_file, std::ios::binary);
+      out << test_content;
     }
 
-    std::string doc_hash = evida::ingest::compute_file_sha256(tmp_pdf);
-    if (doc_hash.size() != 64) return 12;
+    // 4.1 Verificação de bytes íntegros
+    auto int_ok = evida::corpus::verify_blob_integrity(store.db(), test_sha);
+    if (!int_ok.exists || !int_ok.matches_sha256 || int_ok.status != "verified_intact") {
+      std::cerr << "Falha na verificação de integridade positiva: " << int_ok.status << "\n";
+      return 11;
+    }
+
+    // 4.2 Verificação de arquivo adulterado (bit-flip / corrupção)
+    {
+      std::ofstream out(test_file, std::ios::binary | std::ios::trunc);
+      out << test_content << " BYTE ADULTERADO FRAUDULENTO.";
+    }
+    auto int_tampered = evida::corpus::verify_blob_integrity(store.db(), test_sha);
+    if (!int_tampered.exists || int_tampered.matches_sha256 || int_tampered.status != "corrupted_tampered") {
+      std::cerr << "Falha na detecção de arquivo adulterado!\n";
+      return 12;
+    }
+
+    // 4.3 Verificação de arquivo ausente
+    std::string fake_sha(64, 'f');
+    auto int_missing = evida::corpus::verify_blob_integrity(store.db(), fake_sha);
+    if (int_missing.exists || int_missing.status != "missing") {
+      std::cerr << "Falha na detecção de arquivo ausente!\n";
+      return 13;
+    }
+
+    // Limpa arquivo de teste
+    fs::remove(test_file);
+
+    // 5. Teste da Camada Unificada de Proveniência (Múltiplas Evidências para um Registro)
+    // 5.1 Registra blob e acquisition
+    std::string doc_id = "DOC-TEST-001";
+    std::string valid_sha(64, 'e');
+    char* err = nullptr;
+    std::string sql_setup =
+        "INSERT INTO document_blob (sha256, byte_size, storage_path, status) VALUES ('" + valid_sha + "', 1024, 'storage/documents/" + valid_sha + ".pdf', 'verified');"
+        "INSERT INTO document_acquisition (document_id, sha256, source_title, publication_date, issue_number) VALUES ('" + doc_id + "', '" + valid_sha + "', 'Informativo Teste nº 999', '2026-11-05', 999);"
+        "INSERT INTO extraction_run (run_id, document_id, extractor_name, extractor_version, parameters_json) VALUES ('run-001', '" + doc_id + "', 'evida-extractor', '0.3.1', '{\"mode\":\"strict\"}');"
+        // Evidência 1: Suporte inicial
+        "INSERT INTO evidence_span (evidence_id, extraction_run_id, document_id, page_number, verbatim_text, text_sha256) VALUES ('span-001', 'run-001', '" + doc_id + "', 12, 'Precipitação acumulada foi de 42 mm.', 'sha-span-1');"
+        // Evidência 2: Revisão posterior em outra página
+        "INSERT INTO evidence_span (evidence_id, extraction_run_id, document_id, page_number, verbatim_text, text_sha256) VALUES ('span-002', 'run-001', '" + doc_id + "', 14, 'Correção técnica: precipitação em Ibirubá atingiu 45 mm.', 'sha-span-2');"
+        // Vínculo M:N entre registro analítico OBS-TEST e ambas as evidências
+        "INSERT INTO record_evidence_link (link_id, record_type, record_id, evidence_id, link_type, notes) VALUES ('link-1', 'observacao', 'OBS-TEST-001', 'span-001', 'supports', 'Dado inicial de campo');"
+        "INSERT INTO record_evidence_link (link_id, record_type, record_id, evidence_id, link_type, notes) VALUES ('link-2', 'observacao', 'OBS-TEST-001', 'span-002', 'revises', 'Retificação de medição posterior');";
+
+    if (sqlite3_exec(store.db(), sql_setup.c_str(), nullptr, nullptr, &err) != SQLITE_OK) {
+      std::string m = err ? err : "erro sql";
+      sqlite3_free(err);
+      std::cerr << "Falha no setup de links: " << m << "\n";
+      return 14;
+    }
+
+    // 5.2 Consulta via get_audit_proof e valida múltiplos links
+    auto proof = evida::corpus::get_audit_proof(store.db(), "OBS-TEST-001");
+    if (!proof.has_value()) {
+      std::cerr << "Audit proof não localizou registro OBS-TEST-001!\n";
+      return 15;
+    }
+    if (proof->links.size() != 2) {
+      std::cerr << "Esperado 2 vínculos de evidência, obtido: " << proof->links.size() << "\n";
+      return 16;
+    }
+    if (proof->links[0].link_type != "supports" || proof->links[1].link_type != "revises") {
+      std::cerr << "Tipos de vínculo incorretos!\n";
+      return 17;
+    }
+    if (proof->extractor_name != "evida-extractor" || proof->extractor_version != "0.3.1") {
+      std::cerr << "Execução de extração não recuperada corretamente!\n";
+      return 18;
+    }
 
   } catch (const std::exception& e) {
     std::cerr << "Exceção em teste: " << e.what() << '\n';
     return 20;
   }
 
-  std::cout << "PROBANTE: Evidência epistêmica, Banco v0.2, Autenticação MORFO e Proveniência APROVADOS.\n";
+  std::cout << "PROBANTE: Evidência epistêmica, Banco v0.4, Autenticação MORFO, Verificação Dinâmica de Bytes e Vínculos M:N APROVADOS.\n";
   return 0;
 }

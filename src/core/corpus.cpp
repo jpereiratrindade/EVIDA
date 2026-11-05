@@ -4,8 +4,11 @@
 // Licensed under the GNU General Public License v3.0 or later.
 
 #include "evida/corpus.hpp"
+#include "evida/ingest.hpp"
+
 #include <sqlite3.h>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -24,10 +27,8 @@ int col_int(sqlite3_stmt* stmt, int col) {
   return sqlite3_column_int(stmt, col);
 }
 
-bool check_in_vault(const std::string& sha256) {
-  if (sha256.empty()) return false;
-  fs::path p = fs::path("storage/documents") / (sha256 + ".pdf");
-  return fs::exists(p);
+int64_t col_int64(sqlite3_stmt* stmt, int col) {
+  return sqlite3_column_int64(stmt, col);
 }
 
 std::string get_page_text_for_sha(sqlite3* db, const std::string& sha256, int page) {
@@ -49,6 +50,60 @@ std::string get_page_text_for_sha(sqlite3* db, const std::string& sha256, int pa
 }
 
 } // namespace
+
+BlobIntegrity verify_blob_integrity(sqlite3* db, const std::string& sha256) {
+  BlobIntegrity bi;
+  if (sha256.empty()) {
+    bi.status = "missing";
+    return bi;
+  }
+
+  fs::path p = fs::path("storage/documents") / (sha256 + ".pdf");
+  if (!fs::exists(p)) {
+    bi.exists = false;
+    bi.status = "missing";
+    if (db) {
+      sqlite3_stmt* u = nullptr;
+      if (sqlite3_prepare_v2(db, "UPDATE document_blob SET status = 'missing', verified_at = CURRENT_TIMESTAMP WHERE sha256 = ?;", -1, &u, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(u, 1, sha256.c_str(), -1, SQLITE_STATIC);
+        sqlite3_step(u);
+        sqlite3_finalize(u);
+      }
+    }
+    return bi;
+  }
+
+  bi.exists = true;
+  std::error_code ec;
+  bi.byte_size = fs::file_size(p, ec);
+  try {
+    bi.recalculated_sha256 = evida::ingest::compute_file_sha256(p);
+  } catch (...) {
+    bi.status = "corrupted_tampered";
+    return bi;
+  }
+
+  if (bi.recalculated_sha256 == sha256) {
+    bi.matches_sha256 = true;
+    bi.status = "verified_intact";
+  } else {
+    bi.matches_sha256 = false;
+    bi.status = "corrupted_tampered";
+  }
+
+  if (db) {
+    sqlite3_stmt* u = nullptr;
+    if (sqlite3_prepare_v2(db, "UPDATE document_blob SET status = ?, verified_at = CURRENT_TIMESTAMP, byte_size = ? WHERE sha256 = ?;", -1, &u, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(u, 1, bi.status.c_str(), -1, SQLITE_STATIC);
+      sqlite3_bind_int64(u, 2, static_cast<sqlite3_int64>(bi.byte_size));
+      sqlite3_bind_text(u, 3, sha256.c_str(), -1, SQLITE_STATIC);
+      sqlite3_step(u);
+      sqlite3_finalize(u);
+    }
+  }
+
+  return bi;
+}
 
 std::vector<EventItem> list_events(sqlite3* db, const std::string& classe,
                                    const std::string& regiao,
@@ -326,9 +381,12 @@ std::vector<EpisodeItem> list_episodes(sqlite3* db, int limit) {
 
 std::vector<VaultDocumentItem> list_vault_documents(sqlite3* db) {
   std::vector<VaultDocumentItem> out;
-  const char* sql = "SELECT documento_id, arquivo, numero_informativo, data_publicacao, "
-                    "ano, numero_paginas, caracteres_extraidos, sha256, sha256_texto_normalizado "
-                    "FROM documentos ORDER BY numero_informativo ASC;";
+  const char* sql = "SELECT d.documento_id, d.arquivo, d.numero_informativo, d.data_publicacao, "
+                    "d.ano, d.numero_paginas, d.caracteres_extraidos, d.sha256, d.sha256_texto_normalizado, "
+                    "b.byte_size, b.status "
+                    "FROM documentos d "
+                    "LEFT JOIN document_blob b ON d.sha256 = b.sha256 "
+                    "ORDER BY d.numero_informativo ASC;";
 
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return out;
@@ -344,7 +402,10 @@ std::vector<VaultDocumentItem> list_vault_documents(sqlite3* db) {
     it.caracteres_extraidos = col_int(stmt, 6);
     it.sha256 = col_text(stmt, 7);
     it.sha256_texto_normalizado = col_text(stmt, 8);
-    it.in_vault = check_in_vault(it.sha256);
+    it.byte_size = static_cast<uintmax_t>(col_int64(stmt, 9));
+    it.integrity_status = col_text(stmt, 10);
+    if (it.integrity_status.empty()) it.integrity_status = "verified";
+    it.in_vault = (it.integrity_status != "missing" && it.byte_size > 0);
     out.push_back(std::move(it));
   }
   sqlite3_finalize(stmt);
@@ -357,121 +418,212 @@ std::optional<AuditProofItem> get_audit_proof(sqlite3* db, const std::string& en
   AuditProofItem proof;
   proof.entity_id = entity_id;
 
-  // 1. Check eventos
+  // 1. Consulta via Nova Camada Unificada: record_evidence_link -> evidence_span -> document_acquisition
+  const char* sql_unified =
+      "SELECT rel.record_id, rel.record_type, es.evidence_id, es.document_id, "
+      "es.page_number, es.section_name, es.verbatim_text, es.text_sha256, "
+      "da.source_title, da.publication_date, da.issue_number, da.sha256, "
+      "er.run_id, er.extractor_name, er.extractor_version, er.parameters_json, er.executed_at "
+      "FROM record_evidence_link rel "
+      "JOIN evidence_span es ON rel.evidence_id = es.evidence_id "
+      "JOIN document_acquisition da ON es.document_id = da.document_id "
+      "LEFT JOIN extraction_run er ON es.extraction_run_id = er.run_id "
+      "WHERE rel.record_id = ? LIMIT 1;";
+
+  sqlite3_stmt* stmt = nullptr;
+  bool found_unified = false;
+  if (sqlite3_prepare_v2(db, sql_unified, -1, &stmt, nullptr) == SQLITE_OK) {
+    sqlite3_bind_text(stmt, 1, entity_id.c_str(), -1, SQLITE_STATIC);
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+      found_unified = true;
+      proof.entity_type = col_text(stmt, 1);
+      proof.evidence_span_id = col_text(stmt, 2);
+      proof.documento_id = col_text(stmt, 3);
+      proof.pagina = col_int(stmt, 4);
+      proof.secao = col_text(stmt, 5);
+      proof.evidencia_textual = col_text(stmt, 6);
+      proof.text_sha256 = col_text(stmt, 7);
+      proof.arquivo = col_text(stmt, 8);
+      proof.data_publicacao = col_text(stmt, 9);
+      proof.numero_informativo = col_int(stmt, 10);
+      proof.sha256 = col_text(stmt, 11);
+      proof.extraction_run_id = col_text(stmt, 12);
+      proof.extractor_name = col_text(stmt, 13);
+      proof.extractor_version = col_text(stmt, 14);
+      proof.extraction_params = col_text(stmt, 15);
+      proof.executed_at = col_text(stmt, 16);
+    }
+    sqlite3_finalize(stmt);
+  }
+
+  // Se localizado na camada unificada, busca todos os vínculos de evidência associados ao registro
+  if (found_unified) {
+    const char* sql_links =
+        "SELECT rel.link_id, rel.evidence_id, rel.link_type, rel.notes, "
+        "es.document_id, es.page_number, es.verbatim_text "
+        "FROM record_evidence_link rel "
+        "JOIN evidence_span es ON rel.evidence_id = es.evidence_id "
+        "WHERE rel.record_id = ?;";
+    sqlite3_stmt* lstmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql_links, -1, &lstmt, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(lstmt, 1, entity_id.c_str(), -1, SQLITE_STATIC);
+      while (sqlite3_step(lstmt) == SQLITE_ROW) {
+        EvidenceLinkInfo li;
+        li.link_id = col_text(lstmt, 0);
+        li.evidence_id = col_text(lstmt, 1);
+        li.link_type = col_text(lstmt, 2);
+        li.notes = col_text(lstmt, 3);
+        li.document_id = col_text(lstmt, 4);
+        li.page_number = col_int(lstmt, 5);
+        li.verbatim_text = col_text(lstmt, 6);
+        proof.links.push_back(std::move(li));
+      }
+      sqlite3_finalize(lstmt);
+    }
+
+    // Conferência dinâmica de integridade física dos bytes em disco!
+    proof.blob_integrity = verify_blob_integrity(db, proof.sha256);
+    proof.page_text = get_page_text_for_sha(db, proof.sha256, proof.pagina);
+    return proof;
+  }
+
+  // Fallback: Tabelas existentes (para compatibilidade histórica)
+  // 1. Eventos
   if (entity_id.starts_with("EVT-")) {
     const char* sql = "SELECT e.evento_id, e.documento_id, e.pagina, e.secao, e.evidencia_textual, "
                       "d.arquivo, d.numero_informativo, d.data_publicacao, d.sha256, d.sha256_texto_normalizado "
                       "FROM eventos e LEFT JOIN documentos d ON e.documento_id = d.documento_id "
                       "WHERE e.evento_id = ? LIMIT 1;";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-      sqlite3_bind_text(stmt, 1, entity_id.c_str(), -1, SQLITE_STATIC);
-      if (sqlite3_step(stmt) == SQLITE_ROW) {
+    sqlite3_stmt* s = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &s, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(s, 1, entity_id.c_str(), -1, SQLITE_STATIC);
+      if (sqlite3_step(s) == SQLITE_ROW) {
         proof.entity_type = "evento";
-        proof.documento_id = col_text(stmt, 1);
-        proof.pagina = col_int(stmt, 2);
-        proof.secao = col_text(stmt, 3);
-        proof.evidencia_textual = col_text(stmt, 4);
-        proof.arquivo = col_text(stmt, 5);
-        proof.numero_informativo = col_int(stmt, 6);
-        proof.data_publicacao = col_text(stmt, 7);
-        proof.sha256 = col_text(stmt, 8);
-        proof.sha256_texto_normalizado = col_text(stmt, 9);
-        proof.in_vault = check_in_vault(proof.sha256);
+        proof.documento_id = col_text(s, 1);
+        proof.pagina = col_int(s, 2);
+        proof.secao = col_text(s, 3);
+        proof.evidencia_textual = col_text(s, 4);
+        proof.arquivo = col_text(s, 5);
+        proof.numero_informativo = col_int(s, 6);
+        proof.data_publicacao = col_text(s, 7);
+        proof.sha256 = col_text(s, 8);
+        proof.sha256_texto_normalizado = col_text(s, 9);
+        proof.blob_integrity = verify_blob_integrity(db, proof.sha256);
         proof.page_text = get_page_text_for_sha(db, proof.sha256, proof.pagina);
-        sqlite3_finalize(stmt);
+        sqlite3_finalize(s);
         return proof;
       }
-      sqlite3_finalize(stmt);
+      sqlite3_finalize(s);
     }
   }
 
-  // 2. Check observacoes
+  // 2. Observações
   if (entity_id.starts_with("OBS-")) {
     const char* sql = "SELECT o.observacao_id, o.documento_id, o.pagina, o.secao, o.evidencia_textual, "
                       "d.arquivo, d.numero_informativo, d.data_publicacao, d.sha256, d.sha256_texto_normalizado "
                       "FROM observacoes o LEFT JOIN documentos d ON o.documento_id = d.documento_id "
                       "WHERE o.observacao_id = ? LIMIT 1;";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-      sqlite3_bind_text(stmt, 1, entity_id.c_str(), -1, SQLITE_STATIC);
-      if (sqlite3_step(stmt) == SQLITE_ROW) {
+    sqlite3_stmt* s = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &s, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(s, 1, entity_id.c_str(), -1, SQLITE_STATIC);
+      if (sqlite3_step(s) == SQLITE_ROW) {
         proof.entity_type = "observacao";
-        proof.documento_id = col_text(stmt, 1);
-        proof.pagina = col_int(stmt, 2);
-        proof.secao = col_text(stmt, 3);
-        proof.evidencia_textual = col_text(stmt, 4);
-        proof.arquivo = col_text(stmt, 5);
-        proof.numero_informativo = col_int(stmt, 6);
-        proof.data_publicacao = col_text(stmt, 7);
-        proof.sha256 = col_text(stmt, 8);
-        proof.sha256_texto_normalizado = col_text(stmt, 9);
-        proof.in_vault = check_in_vault(proof.sha256);
+        proof.documento_id = col_text(s, 1);
+        proof.pagina = col_int(s, 2);
+        proof.secao = col_text(s, 3);
+        proof.evidencia_textual = col_text(s, 4);
+        proof.arquivo = col_text(s, 5);
+        proof.numero_informativo = col_int(s, 6);
+        proof.data_publicacao = col_text(s, 7);
+        proof.sha256 = col_text(s, 8);
+        proof.sha256_texto_normalizado = col_text(s, 9);
+        proof.blob_integrity = verify_blob_integrity(db, proof.sha256);
         proof.page_text = get_page_text_for_sha(db, proof.sha256, proof.pagina);
-        sqlite3_finalize(stmt);
+        sqlite3_finalize(s);
         return proof;
       }
-      sqlite3_finalize(stmt);
+      sqlite3_finalize(s);
     }
   }
 
-  // 3. Check ocorrencias_municipais
+  // 3. Ocorrências Municipais
   if (entity_id.starts_with("OM-")) {
     const char* sql = "SELECT om.ocorrencia_id, om.documento, om.pagina, om.secao, om.evidencia_textual, "
                       "d.documento_id, d.arquivo, d.numero_informativo, d.data_publicacao, d.sha256, d.sha256_texto_normalizado "
                       "FROM ocorrencias_municipais om "
-                      "LEFT JOIN documentos d ON (om.documento = d.arquivo OR om.numero_informativo = d.numero_informativo) "
+                      "JOIN documentos d ON om.documento = d.arquivo "
                       "WHERE om.ocorrencia_id = ? LIMIT 1;";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-      sqlite3_bind_text(stmt, 1, entity_id.c_str(), -1, SQLITE_STATIC);
-      if (sqlite3_step(stmt) == SQLITE_ROW) {
+    sqlite3_stmt* s = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &s, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(s, 1, entity_id.c_str(), -1, SQLITE_STATIC);
+      if (sqlite3_step(s) == SQLITE_ROW) {
         proof.entity_type = "ocorrencia_municipal";
-        proof.pagina = col_int(stmt, 2);
-        proof.secao = col_text(stmt, 3);
-        proof.evidencia_textual = col_text(stmt, 4);
-        proof.documento_id = col_text(stmt, 5);
-        proof.arquivo = col_text(stmt, 6);
-        proof.numero_informativo = col_int(stmt, 7);
-        proof.data_publicacao = col_text(stmt, 8);
-        proof.sha256 = col_text(stmt, 9);
-        proof.sha256_texto_normalizado = col_text(stmt, 10);
-        proof.in_vault = check_in_vault(proof.sha256);
+        proof.pagina = col_int(s, 2);
+        proof.secao = col_text(s, 3);
+        proof.evidencia_textual = col_text(s, 4);
+        proof.documento_id = col_text(s, 5);
+        proof.arquivo = col_text(s, 6);
+        proof.numero_informativo = col_int(s, 7);
+        proof.data_publicacao = col_text(s, 8);
+        proof.sha256 = col_text(s, 9);
+        proof.sha256_texto_normalizado = col_text(s, 10);
+        proof.blob_integrity = verify_blob_integrity(db, proof.sha256);
         proof.page_text = get_page_text_for_sha(db, proof.sha256, proof.pagina);
-        sqlite3_finalize(stmt);
+        sqlite3_finalize(s);
         return proof;
       }
-      sqlite3_finalize(stmt);
+      sqlite3_finalize(s);
     }
   }
 
-  // 4. Check legacy evidence table by ID
-  try {
-    int64_t id_num = std::stoll(entity_id);
-    const char* sql = "SELECT ev.id, ev.page, ev.excerpt, sd.id, sd.title, sd.publication_date, sd.sha256 "
-                      "FROM evidence ev JOIN source_document sd ON ev.source_document_id = sd.id "
-                      "WHERE ev.id = ? LIMIT 1;";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-      sqlite3_bind_int64(stmt, 1, id_num);
-      if (sqlite3_step(stmt) == SQLITE_ROW) {
-        proof.entity_type = "evidencia";
-        proof.pagina = col_int(stmt, 1);
-        proof.evidencia_textual = col_text(stmt, 2);
-        proof.documento_id = std::to_string(sqlite3_column_int64(stmt, 3));
-        proof.arquivo = col_text(stmt, 4);
-        proof.data_publicacao = col_text(stmt, 5);
-        proof.sha256 = col_text(stmt, 6);
-        proof.in_vault = check_in_vault(proof.sha256);
-        proof.page_text = get_page_text_for_sha(db, proof.sha256, proof.pagina);
-        sqlite3_finalize(stmt);
-        return proof;
-      }
-      sqlite3_finalize(stmt);
-    }
-  } catch (...) {}
-
   return std::nullopt;
+}
+
+void backfill_provenance_if_needed(sqlite3* db) {
+  if (!db) return;
+
+  // Verifica se document_blob já foi preenchido
+  const char* check_sql = "SELECT count(*) FROM document_blob;";
+  sqlite3_stmt* cstmt = nullptr;
+  if (sqlite3_prepare_v2(db, check_sql, -1, &cstmt, nullptr) != SQLITE_OK) return;
+  int count = 0;
+  if (sqlite3_step(cstmt) == SQLITE_ROW) count = sqlite3_column_int(cstmt, 0);
+  sqlite3_finalize(cstmt);
+
+  if (count > 0) return; // Já preenchido
+
+  // Popula document_blob, document_acquisition e extraction_run a partir de documentos
+  const char* backfill_docs =
+      "INSERT OR IGNORE INTO document_blob (sha256, byte_size, storage_path, status) "
+      "SELECT sha256, 0, 'storage/documents/' || sha256 || '.pdf', 'verified' FROM documentos; "
+      "INSERT OR IGNORE INTO document_acquisition (document_id, sha256, source_title, publisher, publication_date, issue_number, source_url) "
+      "SELECT documento_id, sha256, 'Informativo Conjuntural Emater/RS nº ' || numero_informativo, 'Emater/RS-Ascar', data_publicacao, numero_informativo, 'https://www.emater.tche.br' FROM documentos; "
+      "INSERT OR IGNORE INTO extraction_run (run_id, document_id, extractor_name, extractor_version, parameters_json, page_count, checksum) "
+      "SELECT 'run-' || documento_id, documento_id, 'evida-pdf-extractor', '0.3.1', '{\"engine\":\"poppler\",\"layout\":true}', numero_paginas, sha256_texto_normalizado FROM documentos;";
+
+  char* err = nullptr;
+  sqlite3_exec(db, backfill_docs, nullptr, nullptr, &err);
+  if (err) sqlite3_free(err);
+
+  // Popula evidence_span e record_evidence_link para eventos
+  const char* backfill_evts =
+      "INSERT OR IGNORE INTO evidence_span (evidence_id, extraction_run_id, document_id, page_number, verbatim_text, text_sha256, section_name, confidence) "
+      "SELECT 'span-' || evento_id, 'run-' || documento_id, documento_id, pagina, evidencia_textual, sha256, secao, confianca FROM eventos WHERE documento_id IS NOT NULL; "
+      "INSERT OR IGNORE INTO record_evidence_link (link_id, record_type, record_id, evidence_id, link_type, notes) "
+      "SELECT 'link-' || evento_id, 'evento', evento_id, 'span-' || evento_id, 'supports', 'Extração automática baseline' FROM eventos WHERE documento_id IS NOT NULL;";
+
+  sqlite3_exec(db, backfill_evts, nullptr, nullptr, &err);
+  if (err) sqlite3_free(err);
+
+  // Popula para observações
+  const char* backfill_obs =
+      "INSERT OR IGNORE INTO evidence_span (evidence_id, extraction_run_id, document_id, page_number, verbatim_text, text_sha256, section_name, confidence) "
+      "SELECT 'span-' || observacao_id, 'run-' || documento_id, documento_id, pagina, evidencia_textual, sha256, secao, confianca FROM observacoes WHERE documento_id IS NOT NULL; "
+      "INSERT OR IGNORE INTO record_evidence_link (link_id, record_type, record_id, evidence_id, link_type, notes) "
+      "SELECT 'link-' || observacao_id, 'observacao', observacao_id, 'span-' || observacao_id, 'supports', 'Extração quantitativa baseline' FROM observacoes WHERE documento_id IS NOT NULL;";
+
+  sqlite3_exec(db, backfill_obs, nullptr, nullptr, &err);
+  if (err) sqlite3_free(err);
 }
 
 } // namespace evida::corpus

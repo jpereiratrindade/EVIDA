@@ -459,7 +459,10 @@ async function loadVaultDocuments() {
 }
 
 // ----------------- AUDIT DRAWER (PROVA DOCUMENTAL SOB DEMANDA) -----------------
+let currentAuditEntityId = null;
+
 async function openAuditProof(entityId) {
+  currentAuditEntityId = entityId;
   const overlay = $('audit-drawer-overlay');
   overlay.classList.remove('hidden');
 
@@ -471,6 +474,10 @@ async function openAuditProof(entityId) {
   $('audit-sha256').textContent = '—';
   $('audit-excerpt-text').textContent = 'Carregando evidência literal citada na fonte…';
   $('audit-page-fulltext').textContent = 'Carregando contexto integral da página…';
+  $('audit-blob-size').textContent = '—';
+  $('audit-extraction-run').textContent = '—';
+  $('audit-multiple-links-box').classList.add('hidden');
+  $('audit-links-list').innerHTML = '';
 
   try {
     const res = await api(`/api/v1/evidence/${encodeURIComponent(entityId)}/audit`);
@@ -484,6 +491,69 @@ async function openAuditProof(entityId) {
     $('audit-sha256').textContent = p.sha256 || '—';
     $('audit-sha256').title = p.sha256;
     $('audit-excerpt-text').textContent = p.evidencia_textual || '—';
+
+    // Status da conferência dinâmica de bytes
+    const b = p.blob_integrity || {};
+    const custodyEl = $('audit-custody-status');
+    if (b.status === 'verified_intact') {
+      custodyEl.className = 'custody-tag';
+      custodyEl.textContent = '✓ Bytes Verificados Íntegros no Disco';
+    } else if (b.status === 'corrupted_tampered') {
+      custodyEl.className = 'badge-class seca';
+      custodyEl.textContent = '✕ ADULTERADO / CORROMPIDO (Hash difere)';
+    } else {
+      custodyEl.className = 'badge-class seca';
+      custodyEl.textContent = '✕ Arquivo Ausente no Disco';
+    }
+
+    if (b.byte_size > 0) {
+      $('audit-blob-size').textContent = `${(b.byte_size / 1024 / 1024).toFixed(2)} MB (${number.format(b.byte_size)} bytes)`;
+    } else {
+      $('audit-blob-size').textContent = 'Não aferido';
+    }
+
+    if (p.extractor_name) {
+      $('audit-extraction-run').textContent = `${p.extractor_name} v${p.extractor_version} (${p.extraction_run_id || 'run-base'})`;
+    } else {
+      $('audit-extraction-run').textContent = 'evida-pdf-extractor v0.3.1 (poppler-utils)';
+    }
+
+    // Vínculos múltiplos de evidências (M:N)
+    if (p.links && p.links.length > 0) {
+      $('audit-multiple-links-box').classList.remove('hidden');
+      $('audit-links-list').innerHTML = p.links.map(l => {
+        const linkColor = l.link_type === 'supports' ? '#0369a1' : l.link_type === 'revises' ? '#15803d' : '#b45309';
+        const typeLabel = l.link_type === 'supports' ? 'Sustenta (confirmação)' : l.link_type === 'revises' ? 'Revisa (retificação)' : 'Contesta';
+        return `
+          <div style="background:#fff;border:1px solid #bae6fd;border-radius:6px;padding:8px 12px;font-size:0.78rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+              <strong style="color:${linkColor};font-size:0.75rem;">Vínculo: ${typeLabel}</strong>
+              <small style="color:var(--muted)">Pág. ${l.page_number} (${l.document_id})</small>
+            </div>
+            <p style="margin:2px 0 0;color:var(--ink);font-style:italic;">"${h(l.verbatim_text)}"</p>
+            ${l.notes ? `<small style="display:block;color:var(--muted);margin-top:3px;">Nota: ${h(l.notes)}</small>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Registro de parecer científico humano
+    $('btn-submit-review').onclick = async () => {
+      const decision = $('review-decision-select').value;
+      const notes = $('review-notes-input').value.trim();
+      try {
+        await api(`/api/v1/evidence/${encodeURIComponent(entityId)}/review`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({status: decision, justification: notes})
+        });
+        $('review-status-badge').textContent = decision === 'reviewed' ? 'Revisado' : decision === 'disputed' ? 'Contestado' : 'Rejeitado';
+        $('review-status-badge').className = `badge-class ${decision === 'reviewed' ? 'produtiva' : 'seca'}`;
+        toast('Decisão de revisão científica registrada com sucesso!');
+      } catch (e) {
+        toast('Erro ao registrar revisão: ' + e.message);
+      }
+    };
 
     // Contexto com destaque do trecho
     if (p.page_text) {

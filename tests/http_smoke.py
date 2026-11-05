@@ -58,7 +58,7 @@ def main():
             else:
                 raise AssertionError("Servidor não iniciou em 5 segundos")
             assert health["status"] == "ok"
-            assert health["version"] in ("0.2.0", "0.3.0")
+            assert health["version"] in ("0.3.0", "0.3.1")
 
             with urllib.request.urlopen(base + "/api/v1/stats") as response:
                 stats = json.load(response)
@@ -72,6 +72,8 @@ def main():
                 assert caps["auth_smtp"] is True
                 assert caps["scientific_corpus"] is True
                 assert caps["audit_vault"] is True
+                assert caps["dynamic_byte_verification"] is True
+                assert caps["unified_provenance"] is True
 
             with urllib.request.urlopen(base + "/api/v1/auth/providers") as response:
                 prov = json.load(response)

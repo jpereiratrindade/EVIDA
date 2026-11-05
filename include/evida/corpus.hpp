@@ -117,6 +117,26 @@ struct VaultDocumentItem {
   std::string sha256;
   std::string sha256_texto_normalizado;
   bool in_vault{false};
+  uintmax_t byte_size{0};
+  std::string integrity_status; // "verified_intact", "corrupted_tampered", "missing"
+};
+
+struct EvidenceLinkInfo {
+  std::string link_id;
+  std::string evidence_id;
+  std::string link_type; // "supports", "revises", "disputes", "neutral"
+  std::string document_id;
+  int page_number{0};
+  std::string verbatim_text;
+  std::string notes;
+};
+
+struct BlobIntegrity {
+  bool exists{false};
+  bool matches_sha256{false};
+  uintmax_t byte_size{0};
+  std::string recalculated_sha256;
+  std::string status; // "verified_intact", "corrupted_tampered", "missing"
 };
 
 struct AuditProofItem {
@@ -131,8 +151,21 @@ struct AuditProofItem {
   std::string evidencia_textual;
   std::string sha256;
   std::string sha256_texto_normalizado;
-  bool in_vault{false};
+  
+  // Proveniência Unificada v0.3.1
+  std::string evidence_span_id;
+  std::string text_sha256;
+  std::string extraction_run_id;
+  std::string extractor_name;
+  std::string extractor_version;
+  std::string extraction_params;
+  std::string executed_at;
+  
+  // Integridade Física Recalculada Dinamicamente
+  BlobIntegrity blob_integrity;
+  
   std::string page_text;
+  std::vector<EvidenceLinkInfo> links;
 };
 
 // API query functions
@@ -162,6 +195,10 @@ std::vector<EpisodeItem> list_episodes(sqlite3* db, int limit = 50);
 
 std::vector<VaultDocumentItem> list_vault_documents(sqlite3* db);
 
+BlobIntegrity verify_blob_integrity(sqlite3* db, const std::string& sha256);
+
 std::optional<AuditProofItem> get_audit_proof(sqlite3* db, const std::string& entity_id);
+
+void backfill_provenance_if_needed(sqlite3* db);
 
 } // namespace evida::corpus
