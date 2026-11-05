@@ -50,6 +50,35 @@ std::string q(std::string_view s) {
   return o;
 }
 
+std::string url_decode(std::string_view s) {
+  std::string out;
+  out.reserve(s.size());
+  for (std::size_t i = 0; i < s.size(); ++i) {
+    if (s[i] == '%' && i + 2 < s.size()) {
+      int ch = 0;
+      std::istringstream hex(std::string(s.substr(i + 1, 2)));
+      if (hex >> std::hex >> ch) {
+        out += static_cast<char>(ch);
+        i += 2;
+        continue;
+      }
+    }
+    if (s[i] == '+') out += ' ';
+    else out += s[i];
+  }
+  return out;
+}
+
+std::string get_query_param(std::string_view query, const std::string& key) {
+  if (query.empty()) return "";
+  std::string target = key + "=";
+  auto pos = query.find(target);
+  if (pos == std::string_view::npos) return "";
+  auto val_start = pos + target.size();
+  auto end = query.find('&', val_start);
+  return url_decode(end == std::string_view::npos ? query.substr(val_start) : query.substr(val_start, end - val_start));
+}
+
 std::string json_extract_string(const std::string& body, const std::string& key) {
   std::string pat = "\"" + key + "\"";
   auto pos = body.find(pat);
@@ -326,69 +355,73 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     return respond(http::status::ok, v, documents_to_json(docs));
   }
 
-  if (req.method() == http::verb::get && path.starts_with("/api/v1/documents/")) {
-    std::string sub = path.substr(std::string("/api/v1/documents/").size());
-    auto slash = sub.find('/');
-    if (slash == std::string::npos) {
-      // Document detail: /api/v1/documents/<id>
-      try {
-        int64_t id = std::stoll(sub);
-        auto doc = evida::ingest::get_document_by_id(store.db(), id);
-        if (!doc) return respond(http::status::not_found, v, "{\"error\":\"document_not_found\"}");
+  // Binary File Upload (Padrão de envio contínuo como MORFO)
+  if (req.method() == http::verb::post && path == "/api/v1/documents/upload") {
+    std::string filename = get_query_param(query, "filename");
+    if (filename.empty()) filename = "informativo_emater.pdf";
+    std::string title = get_query_param(query, "title");
+    std::string pub_date = get_query_param(query, "publication_date");
 
-        auto pages = evida::ingest::get_document_pages(store.db(), id);
-        std::ostringstream ss;
-        ss << "{\"document\":{"
-           << "\"id\":" << doc->id
-           << ",\"sha256\":" << q(doc->sha256)
-           << ",\"title\":" << q(doc->title)
-           << ",\"publication_date\":" << q(doc->publication_date)
-           << ",\"source_uri\":" << q(doc->source_uri)
-           << ",\"total_pages\":" << doc->total_pages
-           << ",\"evidence_count\":" << doc->evidence_count
-           << ",\"created_at\":" << q(doc->created_at)
-           << "},\"pages\":[";
-        for (std::size_t i = 0; i < pages.size(); ++i) {
-          if (i > 0) ss << ",";
-          ss << "{\"page\":" << pages[i].page_number
-             << ",\"excerpt\":" << q(pages[i].text_content.substr(0, 180)) << "}";
-        }
-        ss << "]}";
-        return respond(http::status::ok, v, ss.str());
-      } catch (...) {
-        return respond(http::status::bad_request, v, "{\"error\":\"invalid_id\"}");
-      }
-    } else {
-      // Page detail: /api/v1/documents/<id>/pages/<page>
-      std::string id_str = sub.substr(0, slash);
-      std::string rest = sub.substr(slash + 1);
-      if (rest.starts_with("pages/")) {
-        std::string page_str = rest.substr(std::string("pages/").size());
-        try {
-          int64_t doc_id = std::stoll(id_str);
-          int page_num = std::stoi(page_str);
-          auto page = evida::ingest::get_document_page(store.db(), doc_id, page_num);
-          if (!page) return respond(http::status::not_found, v, "{\"error\":\"page_not_found\"}");
-
-          std::ostringstream ss;
-          ss << "{\"page\":{"
-             << "\"source_document_id\":" << page->source_document_id
-             << ",\"page_number\":" << page->page_number
-             << ",\"text\":" << q(page->text_content)
-             << ",\"created_at\":" << q(page->created_at) << "}}";
-          return respond(http::status::ok, v, ss.str());
-        } catch (...) {
-          return respond(http::status::bad_request, v, "{\"error\":\"invalid_parameters\"}");
-        }
-      }
+    if (req.body().empty()) {
+      return respond(http::status::bad_request, v, "{\"error\":\"Arquivo vazio para upload\"}");
     }
+
+    evida::ingest::IngestOptions opts;
+    opts.title = title.empty() ? filename : title;
+    opts.publication_date = pub_date;
+    std::string token = extract_token(req);
+    auto user = auth_service.validate_session(store.db(), token);
+    opts.actor = user ? user->email : "pesquisador@labeco.local";
+
+    auto res = evida::ingest::ingest_pdf_bytes(store.db(), req.body(), filename, opts);
+    if (!res.ok) {
+      return respond(http::status::unprocessable_entity, v, "{\"error\":" + q(res.error_message) + "}");
+    }
+
+    std::ostringstream ss;
+    ss << "{\"status\":\"ok\",\"document_id\":" << res.document_id
+       << ",\"sha256\":" << q(res.sha256)
+       << ",\"title\":" << q(res.title)
+       << ",\"total_pages\":" << res.total_pages
+       << ",\"extracted_evidences\":" << res.extracted_evidences << "}";
+    return respond(http::status::created, v, ss.str());
   }
 
-  // Sample ingestion endpoint (Emater PDF)
+  // Generic document ingest from filepath (JSON)
+  if (req.method() == http::verb::post && path == "/api/v1/documents/ingest") {
+    std::string file_path = json_extract_string(req.body(), "file_path");
+    if (file_path.empty()) file_path = json_extract_string(req.body(), "path");
+    if (file_path.empty()) {
+      return respond(http::status::bad_request, v, "{\"error\":\"missing_file_path\"}");
+    }
+
+    evida::ingest::IngestOptions opts;
+    opts.title = json_extract_string(req.body(), "title");
+    opts.publication_date = json_extract_string(req.body(), "publication_date");
+    opts.source_uri = json_extract_string(req.body(), "source_uri");
+
+    std::string token = extract_token(req);
+    auto user = auth_service.validate_session(store.db(), token);
+    opts.actor = user ? user->email : "pesquisador@labeco.local";
+
+    auto res = evida::ingest::ingest_pdf_document(store.db(), file_path, opts);
+    if (!res.ok) {
+      return respond(http::status::internal_server_error, v, "{\"error\":" + q(res.error_message) + "}");
+    }
+
+    std::ostringstream ss;
+    ss << "{\"status\":\"ok\",\"document_id\":" << res.document_id
+       << ",\"sha256\":" << q(res.sha256)
+       << ",\"title\":" << q(res.title)
+       << ",\"total_pages\":" << res.total_pages
+       << ",\"extracted_evidences\":" << res.extracted_evidences << "}";
+    return respond(http::status::ok, v, ss.str());
+  }
+
+  // Sample ingestion endpoint (Emater PDF de referência)
   if (req.method() == http::verb::post && (path == "/api/v1/documents/ingest-sample" || path == "/api/v1/ingest/sample")) {
     std::filesystem::path sample_pdf = "/tmp/evida_sample_conj_08012026.pdf";
     if (!std::filesystem::exists(sample_pdf)) {
-      // Unpack sample from evida-reference archive if available
       std::filesystem::path ref_zip = "/run/media/jpereiratrindade/labeco10T/dev/cpp/evida-reference/archive/analise_emater.zip";
       if (std::filesystem::exists(ref_zip)) {
         std::string cmd = "unzip -p " + ref_zip.string() + " analise_emater/webapp_data/jobs/5c878af68a23/input/conj_08012026.pdf > " + sample_pdf.string() + " 2>/dev/null";
@@ -421,35 +454,61 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     return respond(http::status::ok, v, ss.str());
   }
 
-  // Generic document ingest from filepath
-  if (req.method() == http::verb::post && path == "/api/v1/documents/ingest") {
-    std::string file_path = json_extract_string(req.body(), "file_path");
-    if (file_path.empty()) file_path = json_extract_string(req.body(), "path");
-    if (file_path.empty()) {
-      return respond(http::status::bad_request, v, "{\"error\":\"missing_file_path\"}");
+  // Document and Page detail endpoints
+  if (req.method() == http::verb::get && path.starts_with("/api/v1/documents/")) {
+    std::string sub = path.substr(std::string("/api/v1/documents/").size());
+    auto slash = sub.find('/');
+    if (slash == std::string::npos) {
+      try {
+        int64_t id = std::stoll(sub);
+        auto doc = evida::ingest::get_document_by_id(store.db(), id);
+        if (!doc) return respond(http::status::not_found, v, "{\"error\":\"document_not_found\"}");
+
+        auto pages = evida::ingest::get_document_pages(store.db(), id);
+        std::ostringstream ss;
+        ss << "{\"document\":{"
+           << "\"id\":" << doc->id
+           << ",\"sha256\":" << q(doc->sha256)
+           << ",\"title\":" << q(doc->title)
+           << ",\"publication_date\":" << q(doc->publication_date)
+           << ",\"source_uri\":" << q(doc->source_uri)
+           << ",\"total_pages\":" << doc->total_pages
+           << ",\"evidence_count\":" << doc->evidence_count
+           << ",\"created_at\":" << q(doc->created_at)
+           << "},\"pages\":[";
+        for (std::size_t i = 0; i < pages.size(); ++i) {
+          if (i > 0) ss << ",";
+          ss << "{\"page\":" << pages[i].page_number
+             << ",\"excerpt\":" << q(pages[i].text_content.substr(0, 180)) << "}";
+        }
+        ss << "]}";
+        return respond(http::status::ok, v, ss.str());
+      } catch (...) {
+        return respond(http::status::bad_request, v, "{\"error\":\"invalid_id\"}");
+      }
+    } else {
+      std::string id_str = sub.substr(0, slash);
+      std::string rest = sub.substr(slash + 1);
+      if (rest.starts_with("pages/")) {
+        std::string page_str = rest.substr(std::string("pages/").size());
+        try {
+          int64_t doc_id = std::stoll(id_str);
+          int page_num = std::stoi(page_str);
+          auto page = evida::ingest::get_document_page(store.db(), doc_id, page_num);
+          if (!page) return respond(http::status::not_found, v, "{\"error\":\"page_not_found\"}");
+
+          std::ostringstream ss;
+          ss << "{\"page\":{"
+             << "\"source_document_id\":" << page->source_document_id
+             << ",\"page_number\":" << page->page_number
+             << ",\"text\":" << q(page->text_content)
+             << ",\"created_at\":" << q(page->created_at) << "}}";
+          return respond(http::status::ok, v, ss.str());
+        } catch (...) {
+          return respond(http::status::bad_request, v, "{\"error\":\"invalid_parameters\"}");
+        }
+      }
     }
-
-    evida::ingest::IngestOptions opts;
-    opts.title = json_extract_string(req.body(), "title");
-    opts.publication_date = json_extract_string(req.body(), "publication_date");
-    opts.source_uri = json_extract_string(req.body(), "source_uri");
-
-    std::string token = extract_token(req);
-    auto user = auth_service.validate_session(store.db(), token);
-    opts.actor = user ? user->email : "pesquisador@labeco.local";
-
-    auto res = evida::ingest::ingest_pdf_document(store.db(), file_path, opts);
-    if (!res.ok) {
-      return respond(http::status::internal_server_error, v, "{\"error\":" + q(res.error_message) + "}");
-    }
-
-    std::ostringstream ss;
-    ss << "{\"status\":\"ok\",\"document_id\":" << res.document_id
-       << ",\"sha256\":" << q(res.sha256)
-       << ",\"title\":" << q(res.title)
-       << ",\"total_pages\":" << res.total_pages
-       << ",\"extracted_evidences\":" << res.extracted_evidences << "}";
-    return respond(http::status::ok, v, ss.str());
   }
 
   // 5. Evidences API
@@ -512,7 +571,7 @@ http::response<http::string_body> handle_request(const http::request<http::strin
 void session(tcp::socket& socket, evida::Store& store, evida::auth::AuthSmtpService& auth_service) {
   beast::flat_buffer buffer;
   http::request_parser<http::string_body> parser;
-  parser.body_limit(32 * 1024 * 1024); // Support up to 32MB uploads
+  parser.body_limit(64 * 1024 * 1024); // Support up to 64MB PDF uploads
   parser.header_limit(16 * 1024);
   beast::error_code ec;
   http::read(socket, buffer, parser, ec);
@@ -567,7 +626,7 @@ int main(int argc, char* argv[]) {
     evida::auth::AuthSmtpService auth_service(auth_config);
 
     net::io_context io{1};
-    tcp::acceptor acceptor(io, {net::ip::make_address("127.0.0.1"), static_cast<unsigned short>(port)});
+    tcp::acceptor acceptor(io, {net::ip::make_address("0.0.0.0"), static_cast<unsigned short>(port)});
     std::cout << "EVIDA v0.2.0 em http://127.0.0.1:" << port << " [DevMode=" << (dev_mode ? "ON" : "OFF") << "]" << std::endl;
 
     for (;;) {

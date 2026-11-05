@@ -68,7 +68,7 @@
       </div>
 
       <!-- USER CHIP PADRÃO MORFO -->
-      <div class="user-chip hidden" id="user-chip">
+      <div class="user-chip" id="user-chip">
         <span class="user-avatar" id="user-avatar" aria-hidden="true">PS</span>
         <div class="user-meta">
           <span class="user-email" id="user-email">pesquisador@labeco.local</span>
@@ -93,8 +93,8 @@
             <h1 id="visao-title">O documento original é a <em>fonte primária.</em></h1>
             <p>Recebimento estruturado de informativos da Emater/RS-Ascar, extração reproduzível de conteúdo por página e registro imutável de proveniência.</p>
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
-              <button class="button white" id="hero-go-ingest" type="button">+ Ingerir documento <span aria-hidden="true">↗</span></button>
-              <button class="button outline" id="hero-sample-ingest" type="button" style="color:#fff;border-color:#ffffff44;">⚡ Ingerir informativo de amostra</button>
+              <button class="button white" id="hero-go-ingest" type="button">+ Receber e Ingerir PDFs <span aria-hidden="true">↗</span></button>
+              <button class="button outline" id="hero-sample-ingest" type="button" style="color:#fff;border-color:#ffffff44;">⚡ Ingerir amostra Emater nº 1901</button>
             </div>
           </div>
           <svg class="hero-network" viewBox="0 0 260 224" aria-hidden="true">
@@ -157,48 +157,72 @@
       <section class="view hidden" id="view-ingestao" aria-labelledby="ingestao-title">
         <div class="pageintro">
           <div>
-            <span class="section-kicker">CADASTRO &amp; EXTRAÇÃO</span>
+            <span class="section-kicker">RECEBIMENTO &amp; EXTRAÇÃO</span>
             <h1 id="ingestao-title">Ingestão documental com proveniência</h1>
-            <p>Envie novos informativos Emater ou selecione um documento existente para inspecionar páginas e extrair evidências.</p>
+            <p>Envie arquivos PDF de informativos para calcular SHA-256, extrair texto página a página e catalogar evidências.</p>
           </div>
-          <button class="button primary" id="btn-quick-sample" type="button">⚡ Carregar Informativo nº 1901 (Amostra)</button>
+          <span class="version-pill" id="ingest-version">INGESTÃO v0.2.0</span>
         </div>
 
-        <div class="panel" style="margin-bottom:24px;">
-          <div class="section-heading">
-            <div>
-              <span class="section-kicker">NOVO DOCUMENTO</span>
-              <h2>Indexar Informativo PDF</h2>
-              <p>Informe o caminho local do arquivo ou selecione para processar na infraestrutura C++26.</p>
+        <!-- FORMULÁRIO DE ENVIO NO PADRÃO RECEBIMENTO MORFO -->
+        <div class="panel uploadpanel" style="margin-bottom:24px;">
+          <form id="upload-doc-form">
+            <div class="section-heading">
+              <div>
+                <h2>Enviar arquivos PDF</h2>
+                <p>Selecione informativos da Emater/RS-Ascar para preservação no acervo local e extração de páginas.</p>
+              </div>
             </div>
-          </div>
 
-          <form id="form-ingest" style="display:grid;gap:14px;max-width:760px;">
-            <label class="auth-label" for="ingest-file-path">
-              Caminho absoluto do PDF no servidor
-              <input type="text" id="ingest-file-path" placeholder="/caminho/para/informativo_emater.pdf" required style="padding:10px 14px;border:1.5px solid var(--line);border-radius:8px;">
-              <small class="auth-hint">Exemplo: /run/media/jpereiratrindade/labeco10T/dev/cpp/evida-reference/... ou arquivo local.</small>
+            <div class="operator-badge">
+              <span class="op-label">Operador responsável:</span>
+              <strong id="operator-email">pesquisador@labeco.local</strong>
+              <small>· Vinculado ao registro de proveniência</small>
+            </div>
+
+            <!-- DROPZONE DRAG & DROP -->
+            <label class="dropzone" id="dropzone" for="file-input">
+              <span class="uploadsymbol" aria-hidden="true">⇧</span>
+              <strong>Arraste o arquivo PDF para esta área</strong>
+              <span>ou clique para selecionar do computador</span>
+              <small>Arquivos PDF · envio progressivo · cálculo instantâneo de SHA-256</small>
             </label>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-              <label class="auth-label" for="ingest-title">
-                Título do informativo
-                <input type="text" id="ingest-title" placeholder="Informativo Conjuntural nº 1901" style="padding:10px 14px;border:1.5px solid var(--line);border-radius:8px;">
+            <input class="visually-hidden-file" id="file-input" type="file" accept="application/pdf,.pdf" multiple>
+
+            <div class="formgrid">
+              <label>Título do informativo <small>Opcional · inferido do arquivo se vazio</small>
+                <input type="text" id="doc-title-input" placeholder="Ex.: Informativo Conjuntural nº 1901">
               </label>
-              <label class="auth-label" for="ingest-date">
-                Data de publicação
-                <input type="date" id="ingest-date" style="padding:10px 14px;border:1.5px solid var(--line);border-radius:8px;">
+              <label>Data de publicação <small>Opcional · inferida do nome ou conteúdo</small>
+                <input id="doc-date-input" type="date">
               </label>
             </div>
-            <button type="submit" class="button primary" id="btn-submit-ingest" style="justify-self:start;">+ Iniciar Ingestão e Extração</button>
+
+            <div class="selected">
+              <strong id="file-count">Nenhum arquivo selecionado</strong>
+              <ul id="file-list"></ul>
+            </div>
+
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px;">
+              <button class="button primary" id="btn-send-files" type="submit" disabled>
+                Registrar e Ingerir Documento <span aria-hidden="true">→</span>
+              </button>
+              <button class="button outline" id="btn-quick-sample" type="button">
+                ⚡ Carregar Amostra nº 1901 (41 págs)
+              </button>
+            </div>
+
+            <div class="upload-results" id="upload-results" role="status" aria-live="polite"></div>
           </form>
-          <div id="ingest-feedback" class="auth-feedback hidden" style="margin-top:14px;"></div>
         </div>
 
+        <!-- TABELA DE DOCUMENTOS CADASTRADOS -->
         <section class="panel">
           <div class="section-heading">
             <div>
               <span class="section-kicker">ACERVO CADASTRADO</span>
-              <h2>Documentos Indexados</h2>
+              <h2>Documentos Preservados</h2>
+              <p>Informativos indexados com assinaturas criptográficas e contagem verificável de evidências.</p>
             </div>
             <button class="button outline" id="btn-refresh-docs" type="button">↻ Atualizar</button>
           </div>
@@ -208,16 +232,16 @@
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Título</th>
+                  <th>Título do Documento</th>
                   <th>Data</th>
-                  <th>Hash SHA-256</th>
+                  <th>Assinatura SHA-256</th>
                   <th>Páginas</th>
                   <th>Evidências</th>
                   <th>Ações</th>
                 </tr>
               </thead>
               <tbody id="docs-table-body">
-                <tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted)">Nenhum documento indexado ainda.</td></tr>
+                <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Carregando documentos indexados…</td></tr>
               </tbody>
             </table>
           </div>
@@ -441,7 +465,7 @@
           Endereço de e-mail institucional
           <div class="auth-input-wrap">
             <span class="auth-icon" aria-hidden="true">✉</span>
-            <input type="email" id="auth-email-input" placeholder="seu.email@labeco.local" required autocomplete="email" autofocus>
+            <input type="email" id="auth-email-input" value="pesquisador@labeco.local" placeholder="seu.email@labeco.local" required autocomplete="email" autofocus>
           </div>
           <small class="auth-hint">O código de uso único (6 dígitos, 10 min, máx. 5 tentativas) será enviado para seu e-mail.</small>
         </label>
@@ -489,7 +513,7 @@
 
     <div class="auth-foot">
       <span>EVIDA v0.2.0 · Núcleo C++26</span>
-      <span>LABECO</span>
+      <button type="button" class="link-btn" id="btn-dismiss-auth" style="color:var(--muted);font-size:0.75rem;">Dispensar / Explorar ✕</button>
     </div>
   </section>
 </div>

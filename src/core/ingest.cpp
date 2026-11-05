@@ -13,7 +13,7 @@
 #include <regex>
 #include <sstream>
 #include <sqlite3.h>
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 
 namespace fs = std::filesystem;
 
@@ -42,62 +42,126 @@ std::string trim_spaces(std::string_view s) {
     return std::string(s);
 }
 
+fs::path storage_dir() {
+#ifdef EVIDA_STORAGE_DIR
+    fs::path p(EVIDA_STORAGE_DIR);
+    if (!fs::exists(p)) fs::create_directories(p);
+    return p;
+#else
+    fs::path p = "storage/documents";
+    if (!fs::exists(p)) fs::create_directories(p);
+    return p;
+#endif
+}
+
 } // namespace
 
-std::string compute_file_sha256(const fs::path& file_path) {
-    std::ifstream file(file_path, std::ios::binary);
-    if (!file) throw std::runtime_error("Não foi possível ler arquivo para hash: " + file_path.string());
-
-    SHA256_CTX sha256;
-    SHA256_Init(&sha256);
-    std::array<char, 32768> buffer;
-    while (file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
-        SHA256_Update(&sha256, buffer.data(), file.gcount());
+std::string compute_bytes_sha256(std::string_view bytes) {
+    unsigned char hash[EVP_MAX_MD_SIZE];
+    size_t md_len = 0;
+    if (EVP_Q_digest(nullptr, "SHA256", nullptr, bytes.data(), bytes.size(), hash, &md_len) != 1) {
+        throw std::runtime_error("OpenSSL EVP_Q_digest failed");
     }
-
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256_Final(hash, &sha256);
-
     std::ostringstream ss;
     ss << std::hex << std::setfill('0');
-    for (unsigned char b : hash) {
-        ss << std::setw(2) << static_cast<int>(b);
+    for (size_t i = 0; i < md_len; ++i) {
+        ss << std::setw(2) << static_cast<int>(hash[i]);
     }
     return ss.str();
 }
 
-int get_pdf_total_pages(const fs::path& pdf_path) {
-    std::string cmd = "pdfinfo " + shell_quote(pdf_path.string()) + " 2>/dev/null";
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe) return 0;
+std::string compute_file_sha256(const fs::path& file_path) {
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file) throw std::runtime_error("Não foi possível ler arquivo para hash: " + file_path.string());
+    std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    return compute_bytes_sha256(contents);
+}
 
-    char buffer[256];
-    std::regex page_regex(R"(Pages:\s+(\d+))");
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        std::string line(buffer);
-        std::smatch match;
-        if (std::regex_search(line, match, page_regex) && match.size() > 1) {
-            try {
-                return std::stoi(match[1].str());
-            } catch (...) {
-                return 0;
+int get_pdf_total_pages(const fs::path& pdf_path) {
+    // 1. Tenta via pdfinfo
+    std::string cmd = "pdfinfo " + shell_quote(pdf_path.string()) + " 2>/dev/null";
+    FILE* p1 = popen(cmd.c_str(), "r");
+    if (p1) {
+        char buffer[256];
+        std::regex page_regex(R"(Pages:\s+(\d+))");
+        while (fgets(buffer, sizeof(buffer), p1) != nullptr) {
+            std::string line(buffer);
+            std::smatch match;
+            if (std::regex_search(line, match, page_regex) && match.size() > 1) {
+                pclose(p1);
+                try {
+                    return std::stoi(match[1].str());
+                } catch (...) {}
+                break;
             }
         }
+        pclose(p1);
     }
-    return 0;
+
+    // 2. Fallback: conta caracteres formfeed '\f' gerados por pdftotext
+    std::string cmd2 = "pdftotext " + shell_quote(pdf_path.string()) + " - 2>/dev/null";
+    FILE* p2 = popen(cmd2.c_str(), "r");
+    if (p2) {
+        int form_feeds = 0;
+        int c = 0;
+        while ((c = fgetc(p2)) != EOF) {
+            if (c == '\f') form_feeds++;
+        }
+        pclose(p2);
+        if (form_feeds > 0) return form_feeds;
+    }
+
+    return 1;
 }
 
 std::string extract_pdf_page_text(const fs::path& pdf_path, int page_number) {
-    std::string cmd = "pdftotext -f " + std::to_string(page_number) + " -l " + std::to_string(page_number) + " " + shell_quote(pdf_path.string()) + " - 2>/dev/null";
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    std::string cmd = "pdftotext -layout -enc UTF-8 -f " + std::to_string(page_number) + " -l " + std::to_string(page_number) + " " + shell_quote(pdf_path.string()) + " - 2>/dev/null";
+    FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) return "";
 
     std::string output;
     char buffer[1024];
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
+    pclose(pipe);
     return output;
+}
+
+IngestResult ingest_pdf_bytes(sqlite3* db, const std::string& pdf_bytes, const std::string& original_filename, const IngestOptions& opts) {
+    IngestResult res;
+    if (pdf_bytes.empty()) {
+        res.error_message = "Arquivo vazio (0 bytes)";
+        return res;
+    }
+
+    std::string sha256;
+    try {
+        sha256 = compute_bytes_sha256(pdf_bytes);
+    } catch (const std::exception& e) {
+        res.error_message = e.what();
+        return res;
+    }
+    res.sha256 = sha256;
+
+    // Salva o arquivo no diretório de armazenamento seguro
+    fs::path target_path = storage_dir() / (sha256 + ".pdf");
+    if (!fs::exists(target_path)) {
+        std::ofstream out(target_path, std::ios::binary);
+        if (!out) {
+            res.error_message = "Não foi possível persistir arquivo em " + target_path.string();
+            return res;
+        }
+        out.write(pdf_bytes.data(), pdf_bytes.size());
+        out.close();
+    }
+
+    IngestOptions final_opts = opts;
+    if (final_opts.title.empty()) {
+        final_opts.title = original_filename.empty() ? ("Documento " + sha256.substr(0, 8)) : original_filename;
+    }
+
+    return ingest_pdf_document(db, target_path, final_opts);
 }
 
 IngestResult ingest_pdf_document(sqlite3* db, const fs::path& pdf_path, const IngestOptions& opts) {
@@ -116,7 +180,14 @@ IngestResult ingest_pdf_document(sqlite3* db, const fs::path& pdf_path, const In
     }
     res.sha256 = sha256;
 
-    // Check if already registered
+    // Copia para o repositório seguro se ainda não estiver lá
+    fs::path target_path = storage_dir() / (sha256 + ".pdf");
+    if (pdf_path != target_path && !fs::exists(target_path)) {
+        std::error_code ec;
+        fs::copy_file(pdf_path, target_path, fs::copy_options::overwrite_existing, ec);
+    }
+
+    // Verifica se já está indexado
     auto existing = get_document_by_sha256(db, sha256);
     int64_t doc_id = 0;
     if (existing.has_value()) {
@@ -135,7 +206,6 @@ IngestResult ingest_pdf_document(sqlite3* db, const fs::path& pdf_path, const In
     std::string doc_title = opts.title.empty() ? pdf_path.stem().string() : opts.title;
     std::string pub_date = opts.publication_date;
     if (pub_date.empty()) {
-        // Tenta inferir do nome do arquivo (ex: conj_08012026 -> 2026-01-08)
         std::regex date_match(R"((\d{2})(\d{2})(\d{4}))");
         std::smatch m;
         std::string stem = pdf_path.stem().string();
@@ -148,7 +218,7 @@ IngestResult ingest_pdf_document(sqlite3* db, const fs::path& pdf_path, const In
 
     std::string source_uri = opts.source_uri.empty() ? ("file://" + pdf_path.string()) : opts.source_uri;
 
-    // Insert into source_document
+    // Inserção em source_document
     const char* insert_doc_sql = R"(
         INSERT INTO source_document(sha256, title, publication_date, source_uri)
         VALUES(?, ?, ?, ?);
@@ -174,8 +244,8 @@ IngestResult ingest_pdf_document(sqlite3* db, const fs::path& pdf_path, const In
 
     int evidence_counter = 0;
 
-    // Extract pages and save
-    const char* ins_page_sql = "INSERT INTO document_page(source_document_id, page_number, text_content) VALUES(?, ?, ?);";
+    // Extrai páginas e salva
+    const char* ins_page_sql = "INSERT OR REPLACE INTO document_page(source_document_id, page_number, text_content) VALUES(?, ?, ?);";
     sqlite3_stmt* page_stmt = nullptr;
     sqlite3_prepare_v2(db, ins_page_sql, -1, &page_stmt, nullptr);
 
@@ -194,14 +264,16 @@ IngestResult ingest_pdf_document(sqlite3* db, const fs::path& pdf_path, const In
         }
 
         if (opts.extract_evidences && ev_stmt) {
-            // Segment page text into paragraphs
             std::istringstream stream(page_text);
             std::string line;
             std::string current_para;
 
             auto flush_para = [&]() {
                 std::string cleaned = trim_spaces(current_para);
-                if (cleaned.size() >= 55) {
+                // Filtra cabeçalhos puramente editoriais e exige substância
+                if (cleaned.size() >= 40 &&
+                    cleaned.find("Informativo Conjuntural. Porto Alegre") == std::string::npos &&
+                    cleaned.find("Dados Internacionais de Catalogação") == std::string::npos) {
                     sqlite3_reset(ev_stmt);
                     sqlite3_bind_int64(ev_stmt, 1, doc_id);
                     sqlite3_bind_int(ev_stmt, 2, p);
@@ -230,7 +302,7 @@ IngestResult ingest_pdf_document(sqlite3* db, const fs::path& pdf_path, const In
     if (page_stmt) sqlite3_finalize(page_stmt);
     if (ev_stmt) sqlite3_finalize(ev_stmt);
 
-    // Provenance Audit Log
+    // Registro de proveniência
     const char* prov_sql = "INSERT INTO provenance_log(entity_type, entity_id, action, details, actor) VALUES(?, ?, ?, ?, ?);";
     sqlite3_stmt* prov_stmt = nullptr;
     if (sqlite3_prepare_v2(db, prov_sql, -1, &prov_stmt, nullptr) == SQLITE_OK) {
@@ -434,6 +506,7 @@ bool update_evidence_status(sqlite3* db, int64_t evidence_id, const std::string&
 
     sqlite3_bind_text(stmt, 1, new_status.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, reviewer.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 3, evidence_id);
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 

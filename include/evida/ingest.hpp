@@ -62,10 +62,12 @@ struct EvidenceRecord {
 };
 
 std::string compute_file_sha256(const std::filesystem::path& file_path);
+std::string compute_bytes_sha256(std::string_view bytes);
 int get_pdf_total_pages(const std::filesystem::path& pdf_path);
 std::string extract_pdf_page_text(const std::filesystem::path& pdf_path, int page_number);
 
 IngestResult ingest_pdf_document(sqlite3* db, const std::filesystem::path& pdf_path, const IngestOptions& opts);
+IngestResult ingest_pdf_bytes(sqlite3* db, const std::string& pdf_bytes, const std::string& original_filename, const IngestOptions& opts);
 
 std::vector<DocumentRecord> list_documents(sqlite3* db);
 std::optional<DocumentRecord> get_document_by_id(sqlite3* db, int64_t doc_id);

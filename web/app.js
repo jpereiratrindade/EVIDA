@@ -1,12 +1,13 @@
 // EVIDA — Observatório de Evidências Científicas
-// Padrão de Identidade Visual e Autenticação MORFO
+// Padrão de Identidade Visual e Ingestão MORFO
 'use strict';
 
 const $ = id => document.getElementById(id);
 const h = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number = new Intl.NumberFormat('pt-BR');
 
-let currentUser = null;
+let currentUser = {email: 'pesquisador@labeco.local', name: 'Pesquisador SisTer', role: 'researcher'};
+let selectedFiles = [];
 let documents = [];
 let evidences = [];
 let currentDoc = null;
@@ -57,11 +58,6 @@ async function api(path, options = {}) {
   const r = await fetch(path, options);
   let data = await r.json().catch(() => ({error: 'Resposta inválida do servidor'}));
   if (!r.ok) {
-    if (r.status === 401 && !path.startsWith('/api/v1/auth/')) {
-      currentUser = null;
-      updateUserUI();
-      showAuthOverlay('Sua sessão expirou ou é necessária autenticação.');
-    }
     const err = new Error(data.message || data.error || `Erro HTTP ${r.status}`);
     err.status = r.status;
     err.data = data;
@@ -83,6 +79,7 @@ function getInitials(name, email) {
 function updateUserUI() {
   const chip = $('user-chip');
   const navUsuarios = $('nav-btn-usuarios');
+  const opEmail = $('operator-email');
   if (currentUser) {
     chip.classList.remove('hidden');
     $('user-avatar').textContent = getInitials(currentUser.name, currentUser.email);
@@ -91,9 +88,11 @@ function updateUserUI() {
     const roleLabel = currentUser.role === 'admin' ? 'Administrador' : currentUser.role === 'researcher' ? 'Pesquisador' : 'Usuário';
     const roleEl = document.querySelector('.user-role');
     if (roleEl) roleEl.textContent = roleLabel;
+    if (opEmail) opEmail.textContent = currentUser.email;
     if (navUsuarios) navUsuarios.classList.toggle('hidden', currentUser.role !== 'admin');
   } else {
     chip.classList.add('hidden');
+    if (opEmail) opEmail.textContent = 'Acesso local';
     if (navUsuarios) navUsuarios.classList.add('hidden');
   }
 }
@@ -228,15 +227,10 @@ async function checkAuth() {
     const res = await api('/api/v1/auth/me');
     if (res.authenticated && res.user) {
       currentUser = res.user;
-      updateUserUI();
-      hideAuthOverlay();
-    } else {
-      currentUser = null;
-      updateUserUI();
-      showAuthOverlay();
     }
+    updateUserUI();
   } catch (_) {
-    showAuthOverlay();
+    updateUserUI();
   }
 }
 
@@ -251,7 +245,96 @@ async function loadStats() {
   } catch (_) {}
 }
 
-// ----------------- INGESTÃO DOCUMENTAL (v0.2.0) -----------------
+// ----------------- INGESTÃO DOCUMENTAL COM UPLOAD REAL (PADRÃO MORFO) -----------------
+
+function filesSelected(files) {
+  selectedFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+  const countEl = $('file-count');
+  const listEl = $('file-list');
+  const sendBtn = $('btn-send-files');
+
+  if (!selectedFiles.length) {
+    countEl.textContent = 'Nenhum arquivo PDF selecionado';
+    listEl.innerHTML = '';
+    sendBtn.disabled = true;
+    return;
+  }
+
+  countEl.textContent = `${selectedFiles.length} arquivo(s) PDF preparado(s):`;
+  listEl.innerHTML = selectedFiles.map(f => `
+    <li>
+      <strong>${h(f.name)}</strong>
+      <span>(${formatBytes(f.size)})</span>
+    </li>
+  `).join('');
+  sendBtn.disabled = false;
+
+  // Auto preenche título se único
+  if (selectedFiles.length === 1 && !$('doc-title-input').value) {
+    $('doc-title-input').value = selectedFiles[0].name.replace(/\.[^/.]+$/, '');
+  }
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+async function sendDocFiles(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (!selectedFiles.length) return;
+
+  const btn = $('btn-send-files');
+  btn.disabled = true;
+  const title = $('doc-title-input').value.trim();
+  const pubDate = $('doc-date-input').value;
+  const results = $('upload-results');
+  results.innerHTML = '';
+
+  let successes = 0;
+  for (let i = 0; i < selectedFiles.length; i++) {
+    const file = selectedFiles[i];
+    const status = document.createElement('p');
+    status.className = 'auth-feedback success';
+    status.textContent = `Processando ${i + 1}/${selectedFiles.length}: ${file.name} (calculando hash SHA-256 e extraindo páginas)…`;
+    results.append(status);
+
+    try {
+      const url = new URL('/api/v1/documents/upload', location.href);
+      url.searchParams.set('filename', file.name);
+      if (title) url.searchParams.set('title', title);
+      if (pubDate) url.searchParams.set('publication_date', pubDate);
+
+      const res = await api(url.pathname + url.search, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/octet-stream'},
+        body: file
+      });
+
+      status.textContent = `✓ ${file.name}: preservado com SHA-256 (${res.total_pages} págs, ${res.extracted_evidences} evidências extraídas).`;
+      successes++;
+      if (res.document_id) {
+        setTimeout(() => openDocInspector(res.document_id), 300);
+      }
+    } catch (err) {
+      status.className = 'auth-feedback error';
+      status.textContent = `✕ ${file.name}: ${err.message}`;
+    }
+  }
+
+  btn.disabled = false;
+  toast(`${successes} de ${selectedFiles.length} documento(s) indexado(s) com sucesso.`);
+  loadStats();
+  await loadDocuments();
+
+  if (successes === selectedFiles.length) {
+    $('upload-doc-form').reset();
+    filesSelected([]);
+  }
+}
 
 async function loadDocuments() {
   const tbody = $('docs-table-body');
@@ -259,7 +342,7 @@ async function loadDocuments() {
     const data = await api('/api/v1/documents');
     documents = data.documents || [];
     if (!documents.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Nenhum documento indexado ainda. Use o formulário ou carregue a amostra.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Nenhum documento indexado ainda. Envie um PDF no formulário acima ou carregue a amostra.</td></tr>';
       return;
     }
     tbody.innerHTML = documents.map(d => `
@@ -281,52 +364,27 @@ async function loadDocuments() {
 }
 
 async function ingestSampleDocument() {
-  const btn = $('hero-sample-ingest') || $('btn-quick-sample');
-  if (btn) btn.disabled = true;
+  const results = $('upload-results');
+  if (results) {
+    results.innerHTML = '<p class="auth-feedback success">Extraindo Informativo nº 1901 com Poppler C++26 (41 páginas)…</p>';
+  }
   toast('Iniciando extração do Informativo Conjuntural de referência…');
+
   try {
     const res = await api('/api/v1/documents/ingest-sample', {method: 'POST'});
     toast(`Sucesso! Documento #${res.document_id} indexado (${res.total_pages} páginas, ${res.extracted_evidences} evidências).`);
+    if (results) {
+      results.innerHTML = `<p class="auth-feedback success">✓ Sucesso! Informativo nº 1901 indexado: ${res.total_pages} páginas e ${res.extracted_evidences} evidências catalogadas.</p>`;
+    }
     loadStats();
-    loadDocuments();
+    await loadDocuments();
     nav('ingestao');
     openDocInspector(res.document_id);
   } catch (err) {
     toast(`Erro na extração: ${err.message}`);
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-async function handleFormIngest(e) {
-  e.preventDefault();
-  const filePath = $('ingest-file-path').value.trim();
-  const title = $('ingest-title').value.trim();
-  const pubDate = $('ingest-date').value;
-  const feedback = $('ingest-feedback');
-
-  if (!filePath) return;
-  const btn = $('btn-submit-ingest');
-  btn.disabled = true;
-  feedback.className = 'auth-feedback success';
-  feedback.textContent = 'Calculando hash SHA-256 e extraindo texto das páginas...';
-  feedback.classList.remove('hidden');
-
-  try {
-    const res = await api('/api/v1/documents/ingest', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({path: filePath, title, publication_date: pubDate})
-    });
-    feedback.textContent = `Documento #${res.document_id} incorporado com sucesso! Extraídas ${res.extracted_evidences} evidências.`;
-    loadStats();
-    loadDocuments();
-    openDocInspector(res.document_id);
-  } catch (err) {
-    feedback.className = 'auth-feedback error';
-    feedback.textContent = `Falha na ingestão: ${err.message}`;
-  } finally {
-    btn.disabled = false;
+    if (results) {
+      results.innerHTML = `<p class="auth-feedback error">✕ Falha na extração: ${h(err.message)}</p>`;
+    }
   }
 }
 
@@ -341,7 +399,7 @@ window.openDocInspector = async function(docId) {
     const inspector = $('doc-inspector');
     inspector.classList.remove('hidden');
     $('inspector-title').textContent = currentDoc.title;
-    $('inspector-subtitle').textContent = `SHA-256: ${currentDoc.sha256} · Total: ${currentDoc.total_pages} páginas`;
+    $('inspector-subtitle').textContent = `Assinatura SHA-256: ${currentDoc.sha256} · Total: ${currentDoc.total_pages} páginas`;
 
     const select = $('select-page');
     select.innerHTML = pages.map(p => `<option value="${p.page}">Página ${p.page}</option>`).join('');
@@ -358,14 +416,13 @@ async function loadPageContent(docId, pageNumber) {
   const viewer = $('page-text-viewer');
   const evList = $('page-evidences-list');
   $('page-indicator').textContent = `Página ${pageNumber} de ${currentDoc ? currentDoc.total_pages : '—'}`;
-  viewer.textContent = 'Extraindo texto da página…';
-  evList.innerHTML = '<p style="color:var(--muted)">Consultando evidências…</p>';
+  viewer.textContent = 'Carregando conteúdo da página…';
+  evList.innerHTML = '<p style="color:var(--muted)">Consultando evidências desta página…</p>';
 
   try {
     const pData = await api(`/api/v1/documents/${docId}/pages/${pageNumber}`);
     viewer.textContent = pData.page.text || '(Página vazia ou sem texto selecionável)';
 
-    // Evidências desta página
     const evData = await api(`/api/v1/evidences?doc_id=${docId}`);
     const pageEvs = (evData.evidences || []).filter(e => e.page === pageNumber);
 
@@ -387,7 +444,7 @@ async function loadPageContent(docId, pageNumber) {
       `).join('');
     }
   } catch (err) {
-    viewer.textContent = `Falha ao carregar conteúdo: ${err.message}`;
+    viewer.textContent = `Falha ao carregar conteúdo da página: ${err.message}`;
   }
 }
 
@@ -508,13 +565,33 @@ document.addEventListener('DOMContentLoaded', () => {
     $('auth-email-form').classList.remove('hidden');
     $('auth-email-input').focus();
   });
+  $('btn-dismiss-auth').addEventListener('click', hideAuthOverlay);
   $('btn-logout').addEventListener('click', logout);
 
-  // Ingestão
+  // Ingestão e Upload Drag & Drop
+  const dropzone = $('dropzone');
+  const fileInput = $('file-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', () => filesSelected(fileInput.files));
+  }
+  if (dropzone) {
+    ['dragenter', 'dragover'].forEach(name => {
+      dropzone.addEventListener(name, e => { e.preventDefault(); dropzone.classList.add('drag'); });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+      dropzone.addEventListener(name, e => { e.preventDefault(); dropzone.classList.remove('drag'); });
+    });
+    dropzone.addEventListener('drop', e => {
+      if (e.dataTransfer && e.dataTransfer.files.length) {
+        filesSelected(e.dataTransfer.files);
+      }
+    });
+  }
+
+  if ($('upload-doc-form')) $('upload-doc-form').addEventListener('submit', sendDocFiles);
   if ($('hero-go-ingest')) $('hero-go-ingest').addEventListener('click', () => nav('ingestao'));
   if ($('hero-sample-ingest')) $('hero-sample-ingest').addEventListener('click', ingestSampleDocument);
   if ($('btn-quick-sample')) $('btn-quick-sample').addEventListener('click', ingestSampleDocument);
-  if ($('form-ingest')) $('form-ingest').addEventListener('submit', handleFormIngest);
   if ($('btn-refresh-docs')) $('btn-refresh-docs').addEventListener('click', loadDocuments);
 
   // Inspector
@@ -546,7 +623,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Gestão de Usuários
   if ($('btn-refresh-users')) $('btn-refresh-users').addEventListener('click', loadUsers);
 
-  // Verifica sessão e estatísticas iniciais
+  // Verifica estado inicial
   checkAuth();
   loadStats();
 });
