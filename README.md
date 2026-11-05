@@ -1,6 +1,6 @@
 # EVIDA — Sistema Científico de Evidências Documentais e Análise
 
-**Sempre pronto. Sempre incompleto.** Versão 0.3.0.
+**Sempre pronto. Sempre incompleto.** Versão 0.3.2 (*Consistência Probatória*).
 
 Sistema científico independente para estudar documentos, preservar proveniência estrita,
 examinar relações narrativas e construir análises temporais, territoriais e de redes.
@@ -14,21 +14,22 @@ Consulte o arquivo [`LICENSE`](file:///run/media/jpereiratrindade/labeco10T/dev/
 ## Fronteira científica & Regras Epistêmicas
 
 - **Regra Metodológica SisTer:** Uma afirmação em relatório oficial é uma *evidência documental institucional*, e **não** comprovação física automática de que o fenômeno aconteceu exatamente daquela maneira.
-- **Cold Custody Archival:** Os arquivos PDF originais são mantidos em cofre frio local (`storage/documents/<sha256>.pdf`) com duplo hash criptográfico (binário e texto normalizado).
-- **Prova Documental Sob Demanda:** A interface do sistema foca no conhecimento científico e entidades (Eventos, Observações, Territórios, Trajetórias). Qualquer evidência pode ser auditada sob demanda através de um drawer probatório que exibe o documento fonte, a assinatura SHA-256, a página física exata e o contexto textual integral da página.
-- **Coocorrência vs. Causalidade:** Coocorrência textual ou proximidade física não comprovam relação causal independente sem validação empírica.
+- **Custódia Documental & Verificação Dinâmica de Bytes:** Os arquivos PDF originais residem em cofre frio (`storage/documents/<sha256>.pdf`). O status do documento inicia em `pending` e somente transita para `verified` após recálculo físico do hash SHA-256 via OpenSSL sobre os bytes do arquivo em disco durante as auditorias.
+- **Proveniência M:N e Revisão Humana:** Vínculos explícitos (`supports`, `revises`, `disputes`) conectam registros analíticos aos trechos literais (`evidence_span`). Revisões de pesquisadores são registradas na entidade `review_decision`, preservando o extrato original intacto.
+- **Isolamento de Rede:** Servidor vinculado estritamente ao loopback local `127.0.0.1`, sem exposição em interfaces externas e com `dev_mode` desativado por padrão.
 
-## Corpus Científico (2026)
+## Corpus Científico Auditado (2026)
 
 | Dimensão Científica | Quantidade Catalogada | Proveniência |
 | :--- | :--- | :--- |
-| **Documentos sob Custódia** | 34 relatórios completos | SHA-256 verificado no cofre |
-| **Eventos & Riscos** | 2.354 eventos relatados | Seca, estiagem, chuvas, pragas, doenças |
-| **Observações & Métricas** | 5.230 medições de campo | Precipitação (mm), colheita (%), produtividade |
+| **Documentos sob Custódia** | 34 relatórios completos | SHA-256 verificado dinamicamente no disco |
+| **Páginas de Proveniência** | 1.272 páginas indexadas | Mapeadas por `document_page_provenance` |
+| **Eventos & Riscos** | 2.354 eventos relatados | 100% vinculados com cadeia documental rastreável |
+| **Observações & Métricas** | 5.230 medições de campo | 100% vinculadas com cadeia documental rastreável |
+| **Ocorrências Municipais** | 356 relatos territoriais | 100% vinculados aos municípios e informativos |
 | **Territórios IBGE (RS)** | 497 municípios mapeados | Códigos de 7 dígitos e ocorrências nominais |
 | **Episódios & Trajetórias** | 326 episódios contínuos | Agrupamentos em janelas temporais de 21 dias |
 | **Cotações de Preços** | 1.387 séries históricas | Produtos agrícolas nas regiões da Emater |
-| **Páginas Textuais Indexadas** | 1.273 páginas extraídas | Texto integral por página para conferência auditável |
 
 ## Compilação e Execução (Fedora / Linux)
 
@@ -37,12 +38,12 @@ Consulte o arquivo [`LICENSE`](file:///run/media/jpereiratrindade/labeco10T/dev/
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/evida-server --port 18142 --db var/evida.sqlite --dev
+./build/evida-server --port 18142 --db var/evida.sqlite
 ```
 
 Acesso local disponível em: **http://127.0.0.1:18142**
 
-## Principais Endpoints da API REST (v0.3.0)
+## Principais Endpoints da API REST (v0.3.2)
 
 - `GET /api/health` — integridade e versão do serviço;
 - `GET /api/v1/capabilities` — mapa de capacidades científicas ativas;

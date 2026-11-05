@@ -58,7 +58,7 @@ def main():
             else:
                 raise AssertionError("Servidor não iniciou em 5 segundos")
             assert health["status"] == "ok"
-            assert health["version"] in ("0.3.0", "0.3.1")
+            assert health["version"] in ("0.3.1", "0.3.2")
 
             with urllib.request.urlopen(base + "/api/v1/stats") as response:
                 stats = json.load(response)

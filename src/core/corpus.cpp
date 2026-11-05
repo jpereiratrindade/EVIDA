@@ -32,12 +32,32 @@ int64_t col_int64(sqlite3_stmt* stmt, int col) {
   return sqlite3_column_int64(stmt, col);
 }
 
+} // namespace
+
 std::string get_page_text_for_sha(sqlite3* db, const std::string& sha256, int page) {
   if (sha256.empty() || page <= 0) return "";
+
+  // 1. Consulta prioritária na nova camada de proveniência de páginas (document_page_provenance)
+  const char* sql_prov =
+      "SELECT dpp.text_content FROM document_page_provenance dpp "
+      "JOIN document_acquisition da ON dpp.document_id = da.document_id "
+      "WHERE da.sha256 = ? AND dpp.page_number = ? LIMIT 1;";
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql_prov, -1, &stmt, nullptr) == SQLITE_OK) {
+    sqlite3_bind_text(stmt, 1, sha256.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, page);
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+      std::string res = col_text(stmt, 0);
+      sqlite3_finalize(stmt);
+      return res;
+    }
+    sqlite3_finalize(stmt);
+  }
+
+  // 2. Fallback para tabela legada
   const char* sql = "SELECT dp.text_content FROM document_page dp "
                     "JOIN source_document sd ON dp.source_document_id = sd.id "
                     "WHERE sd.sha256 = ? AND dp.page_number = ? LIMIT 1;";
-  sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return "";
   sqlite3_bind_text(stmt, 1, sha256.c_str(), -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 2, page);
@@ -49,8 +69,6 @@ std::string get_page_text_for_sha(sqlite3* db, const std::string& sha256, int pa
   sqlite3_finalize(stmt);
   return result;
 }
-
-} // namespace
 
 BlobIntegrity verify_blob_integrity(sqlite3* db, const std::string& sha256) {
   BlobIntegrity bi;
@@ -615,65 +633,83 @@ void backfill_provenance_if_needed(sqlite3* db) {
       },
       nullptr, nullptr);
 
-  // Verifica se document_blob já foi preenchido
-  const char* check_sql = "SELECT count(*) FROM document_blob;";
-  sqlite3_stmt* cstmt = nullptr;
-  if (sqlite3_prepare_v2(db, check_sql, -1, &cstmt, nullptr) != SQLITE_OK) return;
-  int count = 0;
-  if (sqlite3_step(cstmt) == SQLITE_ROW) count = sqlite3_column_int(cstmt, 0);
-  sqlite3_finalize(cstmt);
-
-  if (count > 0) return; // Já preenchido
-
+  // Execução incremental, transacional e idempotente
   char* err = nullptr;
+  sqlite3_exec(db, "BEGIN IMMEDIATE TRANSACTION;", nullptr, nullptr, &err);
+  if (err) {
+    sqlite3_free(err);
+    err = nullptr;
+  }
 
-  // 1. Popula document_blob, document_acquisition e extraction_run a partir de documentos
+  // 1. Popula document_blob (com status 'pending'), document_acquisition e extraction_run histórica
   const char* backfill_docs =
       "INSERT OR IGNORE INTO document_blob (sha256, byte_size, storage_path, status) "
-      "SELECT sha256, 0, 'storage/documents/' || sha256 || '.pdf', 'verified' FROM documentos; "
+      "SELECT sha256, 0, 'storage/documents/' || sha256 || '.pdf', 'pending' FROM documentos; "
       "INSERT OR IGNORE INTO document_acquisition (document_id, sha256, source_title, publisher, publication_date, issue_number, source_url) "
       "SELECT documento_id, sha256, 'Informativo Conjuntural Emater/RS nº ' || numero_informativo, 'Emater/RS-Ascar', data_publicacao, numero_informativo, 'https://www.emater.tche.br' FROM documentos; "
       "INSERT OR IGNORE INTO extraction_run (run_id, document_id, extractor_name, extractor_version, parameters_json, page_count, checksum) "
-      "SELECT 'run-' || documento_id, documento_id, 'evida-pdf-extractor', '0.3.1', '{\"engine\":\"poppler\",\"layout\":true}', numero_paginas, sha256_texto_normalizado FROM documentos;";
+      "SELECT 'run-legado-' || documento_id, documento_id, 'corpus-legado-emater', 'legado-desconhecido', '{\"origem\":\"acervo_historico_emater\",\"modo\":\"importacao_legada\"}', numero_paginas, sha256_texto_normalizado FROM documentos;";
 
   if (sqlite3_exec(db, backfill_docs, nullptr, nullptr, &err) != SQLITE_OK) {
     std::cerr << "ERRO [backfill_provenance]: Falha ao popular docs: " << (err ? err : "desconhecido") << "\n";
     if (err) sqlite3_free(err);
+    err = nullptr;
   }
 
-  // 2. Popula evidence_span e record_evidence_link para eventos
+  // 2. Popula document_page_provenance a partir das páginas textuais do corpus
+  const char* backfill_pages =
+      "INSERT OR IGNORE INTO document_page_provenance (page_id, extraction_run_id, document_id, page_number, text_content, text_sha256) "
+      "SELECT 'page-' || da.document_id || '-p' || dp.page_number, "
+      "'run-legado-' || da.document_id, "
+      "da.document_id, "
+      "dp.page_number, "
+      "dp.text_content, "
+      "evida_sha256(dp.text_content) "
+      "FROM document_page dp "
+      "JOIN source_document sd ON dp.source_document_id = sd.id "
+      "JOIN document_acquisition da ON sd.sha256 = da.sha256;";
+
+  if (sqlite3_exec(db, backfill_pages, nullptr, nullptr, &err) != SQLITE_OK) {
+    std::cerr << "ERRO [backfill_provenance]: Falha ao popular páginas: " << (err ? err : "desconhecido") << "\n";
+    if (err) sqlite3_free(err);
+    err = nullptr;
+  }
+
+  // 3. Popula evidence_span e record_evidence_link para eventos
   const char* backfill_evts =
       "INSERT OR IGNORE INTO evidence_span (evidence_id, extraction_run_id, document_id, page_number, verbatim_text, text_sha256, section_name, confidence) "
-      "SELECT 'span-' || e.evento_id, 'run-' || e.documento_id, e.documento_id, e.pagina, e.evidencia_textual, evida_sha256(COALESCE(e.evidencia_textual, '')), e.secao, e.confianca FROM eventos e WHERE e.documento_id IS NOT NULL; "
+      "SELECT 'span-' || e.evento_id, 'run-legado-' || e.documento_id, e.documento_id, e.pagina, e.evidencia_textual, evida_sha256(COALESCE(e.evidencia_textual, '')), e.secao, e.confianca FROM eventos e WHERE e.documento_id IS NOT NULL; "
       "INSERT OR IGNORE INTO record_evidence_link (link_id, record_type, record_id, evidence_id, link_type, notes) "
-      "SELECT 'link-' || evento_id, 'evento', evento_id, 'span-' || evento_id, 'supports', 'Extração automática baseline' FROM eventos WHERE documento_id IS NOT NULL;";
+      "SELECT 'link-' || evento_id, 'evento', evento_id, 'span-' || evento_id, 'supports', 'Vínculo migrado do acervo histórico da Emater/RS' FROM eventos WHERE documento_id IS NOT NULL;";
 
   if (sqlite3_exec(db, backfill_evts, nullptr, nullptr, &err) != SQLITE_OK) {
     std::cerr << "ERRO [backfill_provenance]: Falha ao popular eventos: " << (err ? err : "desconhecido") << "\n";
     if (err) sqlite3_free(err);
+    err = nullptr;
   }
 
-  // 3. Popula para observações
+  // 4. Popula para observações
   const char* backfill_obs =
       "INSERT OR IGNORE INTO evidence_span (evidence_id, extraction_run_id, document_id, page_number, verbatim_text, text_sha256, section_name, confidence) "
-      "SELECT 'span-' || o.observacao_id, 'run-' || o.documento_id, o.documento_id, o.pagina, o.evidencia_textual, evida_sha256(COALESCE(o.evidencia_textual, '')), o.secao, o.confianca FROM observacoes o WHERE o.documento_id IS NOT NULL; "
+      "SELECT 'span-' || o.observacao_id, 'run-legado-' || o.documento_id, o.documento_id, o.pagina, o.evidencia_textual, evida_sha256(COALESCE(o.evidencia_textual, '')), o.secao, o.confianca FROM observacoes o WHERE o.documento_id IS NOT NULL; "
       "INSERT OR IGNORE INTO record_evidence_link (link_id, record_type, record_id, evidence_id, link_type, notes) "
-      "SELECT 'link-' || observacao_id, 'observacao', observacao_id, 'span-' || observacao_id, 'supports', 'Extração quantitativa baseline' FROM observacoes WHERE documento_id IS NOT NULL;";
+      "SELECT 'link-' || observacao_id, 'observacao', observacao_id, 'span-' || observacao_id, 'supports', 'Vínculo migrado do acervo histórico da Emater/RS' FROM observacoes WHERE documento_id IS NOT NULL;";
 
   if (sqlite3_exec(db, backfill_obs, nullptr, nullptr, &err) != SQLITE_OK) {
     std::cerr << "ERRO [backfill_provenance]: Falha ao popular observações: " << (err ? err : "desconhecido") << "\n";
     if (err) sqlite3_free(err);
+    err = nullptr;
   }
 
-  // 4. Popula para ocorrências municipais
+  // 5. Popula para ocorrências municipais
   const char* backfill_oc =
       "INSERT OR IGNORE INTO evidence_span (evidence_id, extraction_run_id, document_id, page_number, verbatim_text, text_sha256, section_name, confidence) "
-      "SELECT 'span-' || om.ocorrencia_id, 'run-' || d.documento_id, d.documento_id, om.pagina, om.evidencia_textual, evida_sha256(COALESCE(om.evidencia_textual, '')), om.secao, om.confianca_extracao "
+      "SELECT 'span-' || om.ocorrencia_id, 'run-legado-' || d.documento_id, d.documento_id, om.pagina, om.evidencia_textual, evida_sha256(COALESCE(om.evidencia_textual, '')), om.secao, om.confianca_extracao "
       "FROM ocorrencias_municipais om "
       "JOIN documentos d ON om.numero_informativo = d.numero_informativo "
       "WHERE om.evidencia_textual IS NOT NULL AND om.evidencia_textual != ''; "
       "INSERT OR IGNORE INTO record_evidence_link (link_id, record_type, record_id, evidence_id, link_type, notes) "
-      "SELECT 'link-' || om.ocorrencia_id, 'ocorrencia_municipal', om.ocorrencia_id, 'span-' || om.ocorrencia_id, 'supports', 'Extração territorial municipal' "
+      "SELECT 'link-' || om.ocorrencia_id, 'ocorrencia_municipal', om.ocorrencia_id, 'span-' || om.ocorrencia_id, 'supports', 'Vínculo territorial migrado do acervo Emater/RS' "
       "FROM ocorrencias_municipais om "
       "JOIN documentos d ON om.numero_informativo = d.numero_informativo "
       "WHERE om.evidencia_textual IS NOT NULL AND om.evidencia_textual != '';";
@@ -681,7 +717,10 @@ void backfill_provenance_if_needed(sqlite3* db) {
   if (sqlite3_exec(db, backfill_oc, nullptr, nullptr, &err) != SQLITE_OK) {
     std::cerr << "ERRO [backfill_provenance]: Falha ao popular ocorrencias_municipais: " << (err ? err : "desconhecido") << "\n";
     if (err) sqlite3_free(err);
+    err = nullptr;
   }
+
+  sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
 }
 
 } // namespace evida::corpus

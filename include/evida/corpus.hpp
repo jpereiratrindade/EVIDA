@@ -197,6 +197,8 @@ std::vector<VaultDocumentItem> list_vault_documents(sqlite3* db);
 
 BlobIntegrity verify_blob_integrity(sqlite3* db, const std::string& sha256);
 
+std::string get_page_text_for_sha(sqlite3* db, const std::string& sha256, int page);
+
 std::optional<AuditProofItem> get_audit_proof(sqlite3* db, const std::string& entity_id);
 
 void backfill_provenance_if_needed(sqlite3* db);

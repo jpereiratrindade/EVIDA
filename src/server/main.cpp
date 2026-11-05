@@ -8,6 +8,7 @@
 #include "evida/evidence.hpp"
 #include "evida/ingest.hpp"
 #include "evida/store.hpp"
+#include "evida/version.hpp"
 #include <sqlite3.h>
 
 #include <boost/asio.hpp>
@@ -450,6 +451,7 @@ http::response<http::string_body> handle_request(const http::request<http::strin
   const std::string target{req.target()};
   const std::string path = target.substr(0, target.find('?'));
   const std::string query = (target.find('?') != std::string::npos) ? target.substr(target.find('?') + 1) : "";
+  const bool dev_mode = auth_service.config().dev_mode;
 
   // 1. Static Web Assets
   if (req.method() == http::verb::get || req.method() == http::verb::head) {
@@ -464,8 +466,9 @@ http::response<http::string_body> handle_request(const http::request<http::strin
   }
 
   // 2. Health & Capabilities
-  if (req.method() == http::verb::get && path == "/api/health") {
-    return respond(http::status::ok, v, "{\"status\":\"ok\",\"system\":\"evida\",\"version\":\"0.3.1\"}");
+  if (req.method() == http::verb::get && (path == "/api/health" || path == "/health")) {
+    std::string h = std::string("{\"status\":\"ok\",\"system\":\"evida\",\"version\":\"") + std::string(evida::VERSION) + "\"}";
+    return respond(http::status::ok, v, h);
   }
 
   if (req.method() == http::verb::get && path == "/api/v1/capabilities") {
@@ -598,7 +601,10 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     opts.publication_date = pub_date;
     std::string token = extract_token(req);
     auto user = auth_service.validate_session(store.db(), token);
-    opts.actor = user ? user->email : "pesquisador@labeco.local";
+    if (!user && !dev_mode) {
+      return respond(http::status::unauthorized, v, "{\"error\":\"unauthorized\",\"message\":\"Ingestão documental requer autenticação.\"}");
+    }
+    opts.actor = user ? user->email : "dev-pesquisador@labeco.local";
 
     auto res = evida::ingest::ingest_pdf_bytes(store.db(), req.body(), filename, opts);
     if (!res.ok) {
@@ -629,7 +635,10 @@ http::response<http::string_body> handle_request(const http::request<http::strin
 
     std::string token = extract_token(req);
     auto user = auth_service.validate_session(store.db(), token);
-    opts.actor = user ? user->email : "pesquisador@labeco.local";
+    if (!user && !dev_mode) {
+      return respond(http::status::unauthorized, v, "{\"error\":\"unauthorized\",\"message\":\"Ingestão documental requer autenticação.\"}");
+    }
+    opts.actor = user ? user->email : "dev-pesquisador@labeco.local";
 
     auto res = evida::ingest::ingest_pdf_document(store.db(), file_path, opts);
     if (!res.ok) {
@@ -816,7 +825,10 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     id = id.substr(0, id.rfind("/review"));
     std::string token = extract_token(req);
     auto user = auth_service.validate_session(store.db(), token);
-    std::string reviewer = user ? user->email : "pesquisador@labeco.local";
+    if (!user && !dev_mode) {
+      return respond(http::status::unauthorized, v, "{\"error\":\"unauthorized\",\"message\":\"Revisão científica humana requer autenticação.\"}");
+    }
+    std::string reviewer = user ? user->email : "dev-pesquisador@labeco.local";
 
     std::string status = json_extract_string(req.body(), "status");
     std::string justification = json_extract_string(req.body(), "justification");
@@ -832,11 +844,14 @@ http::response<http::string_body> handle_request(const http::request<http::strin
       sqlite3_bind_text(stmt, 3, reviewer.c_str(), -1, SQLITE_STATIC);
       sqlite3_bind_text(stmt, 4, status.c_str(), -1, SQLITE_STATIC);
       sqlite3_bind_text(stmt, 5, justification.c_str(), -1, SQLITE_STATIC);
-      sqlite3_step(stmt);
+      int rc = sqlite3_step(stmt);
       sqlite3_finalize(stmt);
+      if (rc != SQLITE_DONE) {
+        return respond(http::status::internal_server_error, v, "{\"error\":\"failed_to_save_review\",\"details\":" + q(sqlite3_errmsg(store.db())) + "}");
+      }
       return respond(http::status::ok, v, "{\"status\":\"ok\",\"decision_id\":" + q(dec_id) + ",\"new_status\":" + q(status) + "}");
     }
-    return respond(http::status::internal_server_error, v, "{\"error\":\"failed_to_save_review\"}");
+    return respond(http::status::internal_server_error, v, "{\"error\":\"failed_to_prepare_review\"}");
   }
 
   // 6. Evidences legacy API
@@ -866,7 +881,10 @@ http::response<http::string_body> handle_request(const http::request<http::strin
 
     std::string token = extract_token(req);
     auto user = auth_service.validate_session(store.db(), token);
-    std::string actor = user ? user->email : "pesquisador@labeco.local";
+    if (!user && !dev_mode) {
+      return respond(http::status::unauthorized, v, "{\"error\":\"unauthorized\",\"message\":\"Criação de evidência requer autenticação.\"}");
+    }
+    std::string actor = user ? user->email : "dev-pesquisador@labeco.local";
 
     int64_t new_id = evida::ingest::add_evidence(store.db(), doc_id, page, excerpt, actor);
     if (new_id <= 0) {
@@ -883,7 +901,10 @@ http::response<http::string_body> handle_request(const http::request<http::strin
       std::string new_status = json_extract_string(req.body(), "status");
       std::string token = extract_token(req);
       auto user = auth_service.validate_session(store.db(), token);
-      std::string actor = user ? user->email : "pesquisador@labeco.local";
+      if (!user && !dev_mode) {
+        return respond(http::status::unauthorized, v, "{\"error\":\"unauthorized\",\"message\":\"Alteração de status requer autenticação.\"}");
+      }
+      std::string actor = user ? user->email : "dev-pesquisador@labeco.local";
 
       bool ok = evida::ingest::update_evidence_status(store.db(), evidence_id, new_status, actor);
       if (!ok) return respond(http::status::bad_request, v, "{\"error\":\"failed_to_update_status\"}");
@@ -956,7 +977,7 @@ int main(int argc, char* argv[]) {
     net::io_context io{1};
     // Segurança restrita: vincula EXCLUSIVAMENTE ao loopback 127.0.0.1
     tcp::acceptor acceptor(io, {net::ip::make_address("127.0.0.1"), static_cast<unsigned short>(port)});
-    std::cout << "EVIDA v0.3.1 em http://127.0.0.1:" << port << " [DevMode=" << (dev_mode ? "ON" : "OFF") << "]" << std::endl;
+    std::cout << "EVIDA v" << evida::VERSION << " (" << evida::RELEASE_NAME << ") em http://127.0.0.1:" << port << " [DevMode=" << (dev_mode ? "ON" : "OFF") << "]" << std::endl;
 
     for (;;) {
       tcp::socket socket(io);

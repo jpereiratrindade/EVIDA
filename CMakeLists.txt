@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(evida VERSION 0.2.0 LANGUAGES CXX)
+project(evida VERSION 0.3.2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -41,5 +41,9 @@ if(BUILD_TESTING)
     add_test(NAME evida.http.smoke COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_SOURCE_DIR}/tests/http_smoke.py" "$<TARGET_FILE:evida-server>")
     set_tests_properties(evida.http.smoke PROPERTIES TIMEOUT 30)
+
+    add_test(NAME evida.corpus.consistency COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_SOURCE_DIR}/tools/verify_corpus_consistency.py")
+    set_tests_properties(evida.corpus.consistency PROPERTIES TIMEOUT 30)
   endif()
 endif()

@@ -227,6 +227,43 @@ int main() {
       return 24;
     }
 
+    // 1. Valida status inicial 'pending' no document_blob ANTES da auditoria dinâmica
+    sqlite3_stmt* st_check = nullptr;
+    if (sqlite3_prepare_v2(backfill_store.db(), "SELECT status FROM document_blob WHERE sha256 = ?;", -1, &st_check, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(st_check, 1, valid_sha.c_str(), -1, SQLITE_STATIC);
+      if (sqlite3_step(st_check) == SQLITE_ROW) {
+        std::string st = (const char*)sqlite3_column_text(st_check, 0);
+        if (st != "pending") {
+          std::cerr << "Status inicial do blob pós-backfill deve ser 'pending', mas foi: " << st << "\n";
+          return 26;
+        }
+      }
+      sqlite3_finalize(st_check);
+    }
+
+    // 2. Ao auditar, verify_blob_integrity roda dinamicamente e detecta que o arquivo físico não existe no disco
+    auto leg_proof = evida::corpus::get_audit_proof(backfill_store.db(), "EVT-LEG-01");
+    if (!leg_proof.has_value() || leg_proof->extractor_name != "corpus-legado-emater" || leg_proof->extractor_version != "legado-desconhecido") {
+      std::cerr << "Falha na auditoria da extração legada: " << (leg_proof ? leg_proof->extractor_name : "nulo") << "\n";
+      return 25;
+    }
+    if (leg_proof->blob_integrity.status != "missing") {
+      std::cerr << "Blob não existente deveria ter status 'missing' após verificação dinâmica, obtido: " << leg_proof->blob_integrity.status << "\n";
+      return 260;
+    }
+
+    // Valida proveniência de páginas textuais em document_page_provenance
+    sqlite3_exec(backfill_store.db(),
+        ("INSERT INTO source_document (id, sha256, title) VALUES (1, '" + valid_sha + "', 'Doc Legado');"
+         "INSERT INTO document_page (source_document_id, page_number, text_content) VALUES (1, 2, 'Texto página 2 legado');").c_str(),
+        nullptr, nullptr, nullptr);
+    evida::corpus::backfill_provenance_if_needed(backfill_store.db());
+    std::string page_text = evida::corpus::get_page_text_for_sha(backfill_store.db(), valid_sha, 2);
+    if (page_text != "Texto página 2 legado") {
+      std::cerr << "Falha na recuperação de página proveniente via document_page_provenance: " << page_text << "\n";
+      return 27;
+    }
+
   } catch (const std::exception& e) {
     std::cerr << "Exceção em teste: " << e.what() << '\n';
     return 20;

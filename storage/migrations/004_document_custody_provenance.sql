@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS "document_blob" (
   "storage_path" TEXT NOT NULL,
   "registered_at" TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "verified_at" TEXT,
-  "status" TEXT NOT NULL DEFAULT 'verified' CHECK(status IN ('verified', 'corrupted', 'missing', 'verified_intact', 'corrupted_tampered'))
+  "status" TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'verified', 'corrupted', 'missing', 'verified_intact', 'corrupted_tampered'))
 );
 CREATE INDEX IF NOT EXISTS idx_blob_status ON document_blob(status);
 
@@ -83,6 +83,19 @@ CREATE TABLE IF NOT EXISTS "review_decision" (
   "decided_at" TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_rev_rec ON review_decision(record_type, record_id);
+
+-- 7. Páginas Textuais Rastreáveis vinculadas à execução
+CREATE TABLE IF NOT EXISTS "document_page_provenance" (
+  "page_id" TEXT PRIMARY KEY,
+  "extraction_run_id" TEXT REFERENCES extraction_run(run_id),
+  "document_id" TEXT NOT NULL REFERENCES document_acquisition(document_id),
+  "page_number" INTEGER NOT NULL CHECK(page_number > 0),
+  "text_content" TEXT NOT NULL,
+  "text_sha256" TEXT NOT NULL,
+  "created_at" TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(document_id, page_number)
+);
+CREATE INDEX IF NOT EXISTS idx_page_prov_lookup ON document_page_provenance(document_id, page_number);
 
 PRAGMA user_version = 4;
 COMMIT;
