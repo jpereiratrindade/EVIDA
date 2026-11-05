@@ -420,15 +420,16 @@ std::optional<AuditProofItem> get_audit_proof(sqlite3* db, const std::string& en
 
   // 1. Consulta via Nova Camada Unificada: record_evidence_link -> evidence_span -> document_acquisition
   const char* sql_unified =
-      "SELECT rel.record_id, rel.record_type, es.evidence_id, es.document_id, "
+      "SELECT COALESCE(rel.record_id, es.evidence_id), COALESCE(rel.record_type, 'evidence'), "
+      "es.evidence_id, es.document_id, "
       "es.page_number, es.section_name, es.verbatim_text, es.text_sha256, "
       "da.source_title, da.publication_date, da.issue_number, da.sha256, "
       "er.run_id, er.extractor_name, er.extractor_version, er.parameters_json, er.executed_at "
-      "FROM record_evidence_link rel "
-      "JOIN evidence_span es ON rel.evidence_id = es.evidence_id "
+      "FROM evidence_span es "
       "JOIN document_acquisition da ON es.document_id = da.document_id "
+      "LEFT JOIN record_evidence_link rel ON es.evidence_id = rel.evidence_id "
       "LEFT JOIN extraction_run er ON es.extraction_run_id = er.run_id "
-      "WHERE rel.record_id = ? LIMIT 1;";
+      "WHERE rel.record_id = ?1 OR es.evidence_id = ?1 LIMIT 1;";
 
   sqlite3_stmt* stmt = nullptr;
   bool found_unified = false;
@@ -436,6 +437,7 @@ std::optional<AuditProofItem> get_audit_proof(sqlite3* db, const std::string& en
     sqlite3_bind_text(stmt, 1, entity_id.c_str(), -1, SQLITE_STATIC);
     if (sqlite3_step(stmt) == SQLITE_ROW) {
       found_unified = true;
+      proof.entity_id = col_text(stmt, 0);
       proof.entity_type = col_text(stmt, 1);
       proof.evidence_span_id = col_text(stmt, 2);
       proof.documento_id = col_text(stmt, 3);
@@ -463,10 +465,10 @@ std::optional<AuditProofItem> get_audit_proof(sqlite3* db, const std::string& en
         "es.document_id, es.page_number, es.verbatim_text "
         "FROM record_evidence_link rel "
         "JOIN evidence_span es ON rel.evidence_id = es.evidence_id "
-        "WHERE rel.record_id = ?;";
+        "WHERE rel.record_id = ?1 OR rel.evidence_id = ?1;";
     sqlite3_stmt* lstmt = nullptr;
     if (sqlite3_prepare_v2(db, sql_links, -1, &lstmt, nullptr) == SQLITE_OK) {
-      sqlite3_bind_text(lstmt, 1, entity_id.c_str(), -1, SQLITE_STATIC);
+      sqlite3_bind_text(lstmt, 1, proof.entity_id.c_str(), -1, SQLITE_STATIC);
       while (sqlite3_step(lstmt) == SQLITE_ROW) {
         EvidenceLinkInfo li;
         li.link_id = col_text(lstmt, 0);
