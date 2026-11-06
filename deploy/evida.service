@@ -1,0 +1,26 @@
+[Unit]
+Description=EVIDA — Evidências Científicas e Custódia Documental
+After=network.target
+Documentation=https://github.com/jpereiratrindade/EVIDA
+
+[Service]
+Type=simple
+User=jpereiratrindade
+Group=jpereiratrindade
+WorkingDirectory=/run/media/jpereiratrindade/labeco10T/dev/cpp/evida
+ExecStart=/run/media/jpereiratrindade/labeco10T/dev/cpp/evida/build/evida-server --host 0.0.0.0 --port 18142 --db var/evida.sqlite
+Restart=always
+RestartSec=5s
+KillMode=process
+
+# Limites e Isolamento para Co-locação no labeco-srv
+MemoryHigh=256M
+MemoryMax=512M
+CPUQuota=50%
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/run/media/jpereiratrindade/labeco10T/dev/cpp/evida/var /run/media/jpereiratrindade/labeco10T/dev/cpp/evida/storage
+
+[Install]
+WantedBy=multi-user.target

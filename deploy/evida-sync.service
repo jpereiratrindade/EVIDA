@@ -1,0 +1,22 @@
+[Unit]
+Description=EVIDA — Sincronização Semanal do Repositório Emater/RS
+After=network-online.target
+Wants=network-online.target
+Documentation=https://github.com/jpereiratrindade/EVIDA
+
+[Service]
+Type=oneshot
+User=jpereiratrindade
+Group=jpereiratrindade
+WorkingDirectory=/run/media/jpereiratrindade/labeco10T/dev/cpp/evida
+ExecStart=/usr/bin/python3 /run/media/jpereiratrindade/labeco10T/dev/cpp/evida/tools/sync_emater_repository.py --cron
+StandardOutput=journal
+StandardError=journal
+
+# Limites de recursos
+MemoryMax=512M
+CPUQuota=50%
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/run/media/jpereiratrindade/labeco10T/dev/cpp/evida/var /run/media/jpereiratrindade/labeco10T/dev/cpp/evida/storage
