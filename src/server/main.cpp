@@ -435,9 +435,12 @@ std::string audit_proof_to_json(const evida::corpus::AuditProofItem& p) {
 
 http::response<http::string_body> respond(http::status status, unsigned version, const std::string& body, std::string_view content_type = "application/json") {
   http::response<http::string_body> res{status, version};
-  res.set(http::field::server, "evida/0.3.1");
+  res.set(http::field::server, "evida/0.3.2");
   res.set(http::field::cache_control, "no-store");
   res.set("X-Content-Type-Options", "nosniff");
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD");
+  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie, X-Requested-With");
   res.set(http::field::content_type, std::string(content_type));
   res.body() = body;
   res.prepare_payload();
@@ -452,6 +455,11 @@ http::response<http::string_body> handle_request(const http::request<http::strin
   const std::string path = target.substr(0, target.find('?'));
   const std::string query = (target.find('?') != std::string::npos) ? target.substr(target.find('?') + 1) : "";
   const bool dev_mode = auth_service.config().dev_mode;
+
+  // 0. CORS Preflight
+  if (req.method() == http::verb::options) {
+    return respond(http::status::no_content, v, "");
+  }
 
   // 1. Static Web Assets
   if (req.method() == http::verb::get || req.method() == http::verb::head) {
