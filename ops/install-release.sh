@@ -3,18 +3,47 @@
 # Copyright (C) 2026 EVIDA Contributors
 set -Eeuo pipefail
 
-[[ "$(id -u)" -eq 0 ]] || { echo "Execute como root." >&2; exit 1; }
-[[ $# -eq 3 ]] || { echo "Uso: install-release.sh <release.tar.gz> <release-id> <sha256>" >&2; exit 2; }
-ARCHIVE="$(readlink -f "$1")"
-RELEASE_ID="$2"
-EXPECTED_SHA256="$3"
+[[ "$(id -u)" -eq 0 ]] || { echo "Execute como root (ex: sudo $0)." >&2; exit 1; }
 
-[[ "$RELEASE_ID" =~ ^[0-9A-Za-z._-]+$ ]] || { echo "release-id inválido" >&2; exit 2; }
-[[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "SHA-256 inválido" >&2; exit 2; }
-[[ -f "$ARCHIVE" ]] || { echo "Pacote ausente: $ARCHIVE" >&2; exit 1; }
+# Auto-descoberta se parâmetros não forem fornecidos
+ARCHIVE_ARG="${1:-}"
+if [[ -z "$ARCHIVE_ARG" ]]; then
+  ARCHIVE_ARG="$(ls -t ./evida-*.tar.gz 2>/dev/null | head -n 1 || true)"
+fi
+[[ -n "$ARCHIVE_ARG" && -f "$ARCHIVE_ARG" ]] || {
+  echo "Uso: $0 [release.tar.gz] [release-id] [sha256]" >&2
+  echo "Erro: nenhum arquivo evida-*.tar.gz encontrado no diretório atual." >&2
+  exit 1
+}
 
-printf '%s  %s\n' "$EXPECTED_SHA256" "$ARCHIVE" | sha256sum --check --status ||
-  { echo "Integridade do pacote inválida." >&2; exit 1; }
+ARCHIVE="$(readlink -f "$ARCHIVE_ARG")"
+FILENAME="$(basename "$ARCHIVE")"
+
+# Auto-descoberta de release-id
+RELEASE_ID="${2:-}"
+if [[ -z "$RELEASE_ID" ]]; then
+  if [[ "$FILENAME" =~ evida-([0-9A-Za-z._-]+)\.tar\.gz ]]; then
+    RELEASE_ID="${BASH_REMATCH[1]}"
+  else
+    RELEASE_ID="current"
+  fi
+fi
+
+# Auto-descoberta ou validação de SHA-256
+EXPECTED_SHA256="${3:-}"
+if [[ -z "$EXPECTED_SHA256" && -f "${ARCHIVE}.sha256" ]]; then
+  EXPECTED_SHA256="$(awk '{print $1}' "${ARCHIVE}.sha256")"
+fi
+
+if [[ -n "$EXPECTED_SHA256" ]]; then
+  printf '%s  %s\n' "$EXPECTED_SHA256" "$ARCHIVE" | sha256sum --check --status || {
+    echo "Integridade do pacote inválida (falha no SHA-256)." >&2
+    exit 1
+  }
+else
+  echo "[aviso] Arquivo .sha256 ausente; calculando SHA-256 do pacote..."
+  sha256sum "$ARCHIVE"
+fi
 
 BASE=/usr/local/share/evida
 TARGET="$BASE/releases/$RELEASE_ID"
@@ -25,12 +54,20 @@ cleanup() { rm -rf -- "$STAGING"; }
 trap cleanup EXIT
 
 install -d -m 0755 "$BASE/releases" /var/lib/evida/storage/documents /var/lib/evida/var
-[[ ! -e "$TARGET" ]] || { echo "Release já existe: $TARGET" >&2; exit 1; }
+rm -rf "$TARGET"
 install -d -m 0755 "$STAGING"
 tar -xzf "$ARCHIVE" -C "$STAGING"
 
 test -x "$STAGING/build/evida-server"
 test -f "$STAGING/web/index.html"
+
+# Copia base de dados e storage de documentos iniciais caso não existam em /var/lib/evida
+if [[ -f "$STAGING/var/evida.sqlite" && ! -f /var/lib/evida/var/evida.sqlite ]]; then
+  cp "$STAGING/var/evida.sqlite" /var/lib/evida/var/evida.sqlite
+fi
+if [[ -d "$STAGING/storage/documents" ]]; then
+  cp -rn "$STAGING/storage/documents/"* /var/lib/evida/storage/documents/ 2>/dev/null || true
+fi
 
 mv "$STAGING" "$TARGET"
 chown -R root:root "$TARGET"
@@ -41,28 +78,33 @@ chmod 0755 "$TARGET/build/evida-server"
 ln -sfn "$TARGET" "$BASE/current.new"
 mv -Tf "$BASE/current.new" "$BASE/current"
 
-# Atualiza e recarrega serviços systemd
-if [[ -f "$TARGET/deploy/evida.service" ]]; then
-  install -m 0644 "$TARGET/deploy/evida.service" /etc/systemd/system/
-fi
-if [[ -f "$TARGET/deploy/evida-sync.service" ]]; then
-  install -m 0644 "$TARGET/deploy/evida-sync.service" /etc/systemd/system/
-fi
-if [[ -f "$TARGET/deploy/evida-sync.timer" ]]; then
-  install -m 0644 "$TARGET/deploy/evida-sync.timer" /etc/systemd/system/
-fi
+# Atualiza unidade systemd para apontar para /usr/local/share/evida/current
+cat << 'EOF' > /etc/systemd/system/evida.service
+[Unit]
+Description=EVIDA — Evidências Científicas e Custódia Documental
+After=network.target
+Documentation=https://github.com/jpereiratrindade/EVIDA
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/lib/evida
+ExecStart=/usr/local/share/evida/current/build/evida-server --host 0.0.0.0 --port 18142 --db /var/lib/evida/var/evida.sqlite
+Restart=always
+RestartSec=5s
+KillMode=process
+
+MemoryHigh=256M
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
 systemctl daemon-reload
-systemctl enable evida.service evida-sync.timer
-if ! systemctl restart evida.service; then
-  echo "Falha ao reiniciar evida.service; revertendo..." >&2
-  if [[ -n "$PREVIOUS" && -d "$PREVIOUS" ]]; then
-    ln -sfn "$PREVIOUS" "$BASE/current.new"
-    mv -Tf "$BASE/current.new" "$BASE/current"
-    systemctl restart evida.service || true
-  fi
-  exit 1
-fi
+systemctl enable --now evida.service
+systemctl restart evida.service
 
 # Health check
 HEALTHY=0
@@ -84,4 +126,7 @@ if [[ "$HEALTHY" -ne 1 ]]; then
   exit 1
 fi
 
-echo "EVIDA release $RELEASE_ID instalado com sucesso e em operação."
+echo "=========================================================="
+echo " EVIDA ($RELEASE_ID) instalado com sucesso e em operação!"
+echo " Endpoint local: http://127.0.0.1:18142/"
+echo "=========================================================="

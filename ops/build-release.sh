@@ -34,8 +34,16 @@ cleanup() { rm -rf -- "$STAGING"; }
 trap cleanup EXIT
 
 git -C "$ROOT" archive HEAD | tar -x -C "$STAGING"
-install -d "$STAGING/build"
+install -d "$STAGING/build" "$STAGING/var" "$STAGING/storage/documents"
 install -m 0755 "$BUILD_DIR/evida-server" "$STAGING/build/evida-server"
+
+# Inclui base de dados do corpus e cofre de documentos na release
+if [[ -f "$ROOT/var/evida.sqlite" ]]; then
+  cp "$ROOT/var/evida.sqlite" "$STAGING/var/evida.sqlite"
+fi
+if [[ -d "$ROOT/storage/documents" ]]; then
+  cp -a "$ROOT/storage/documents/"* "$STAGING/storage/documents/" 2>/dev/null || true
+fi
 
 mkdir -p "$OUTPUT_DIR"
 ARCHIVE="$OUTPUT_DIR/evida-$RELEASE_ID.tar.gz"
