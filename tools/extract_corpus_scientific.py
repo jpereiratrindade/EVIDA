@@ -115,25 +115,60 @@ def run_extraction(db_path: Path):
             ORDER BY page_number;
         """, (doc_id,)).fetchall()
 
-        current_crop = "Geral"
-
         for page_num, text in pages:
             lines = text.split("\n")
-            
-            # Atualiza cultura pelo cabeçalho
-            for crop in CROPS:
-                if re.search(r'\b' + re.escape(crop) + r'\b', text[:300], re.IGNORECASE):
-                    current_crop = crop
-                    break
+            page_head = text[:350].lower()
 
-            # Seção
-            section = "Condições Meteorológicas" if page_num in (3, 4) else ("Grãos" if page_num < 15 else "Geral")
+            # Identifica a seção da página pelos cabeçalhos locais
+            if any(k in page_head for k in ["pastagens", "criações", "forrageiras", "bovinocultura", "ovinocultura", "bovinos", "pecuária"]):
+                page_section = "Criações & Pastagens"
+                default_crop = "Pastagens e Forragens"
+            elif any(k in page_head for k in ["hortigranjeiros", "olericultura", "fruticultura", "hortaliças", "citros"]):
+                page_section = "Hortigranjeiros & Frutas"
+                default_crop = "Hortigranjeiros"
+            elif "meteorológicas" in page_head or page_num in (3, 4):
+                page_section = "Condições Meteorológicas"
+                default_crop = "Geral"
+            elif any(k in page_head for k in ["culturas de inverno", "culturas de verão", "grãos"]):
+                page_section = "Grãos"
+                default_crop = "Geral"
+            else:
+                page_section = "Geral"
+                default_crop = "Geral"
+
+            section = page_section
 
             # Divide parágrafos
             paragraphs = [p.strip() for p in text.split("\n\n") if len(p.strip()) > 30]
 
             for para in paragraphs:
                 para_clean = " ".join(para.split())
+
+                # Determina a atividade específica NO PRÓPRIO PARÁGRAFO
+                para_crop = None
+                if re.search(r'\b(pastagens|pastagem|azevém|braquiária|braquiárias|forrageira|forrageiras|feno|silagem)\b', para_clean, re.IGNORECASE):
+                    para_crop = "Pastagens e Forragens"
+                elif re.search(r'\b(leite|gado leiteiro|bovinocultura de leite)\b', para_clean, re.IGNORECASE):
+                    para_crop = "Bovinocultura de Leite"
+                elif re.search(r'\b(corte|bovinos de corte|bovinocultura de corte)\b', para_clean, re.IGNORECASE):
+                    para_crop = "Bovinocultura de Corte"
+                elif re.search(r'\b(ovinos|ovinocultura)\b', para_clean, re.IGNORECASE):
+                    para_crop = "Ovinocultura"
+                else:
+                    for crop in CROPS:
+                        if re.search(r'\b' + re.escape(crop) + r'\b', para_clean, re.IGNORECASE):
+                            para_crop = crop
+                            break
+
+                # Se não achou no parágrafo, verifica o cabeçalho DESTA PÁGINA ESPECÍFICA (sem vazar entre páginas)
+                if not para_crop:
+                    for crop in CROPS:
+                        if re.search(r'\b' + re.escape(crop) + r'\b', text[:250], re.IGNORECASE):
+                            para_crop = crop
+                            break
+
+                if not para_crop:
+                    para_crop = default_crop
 
                 # Identifica se algum município é citado no parágrafo
                 para_mun = ""
@@ -162,7 +197,7 @@ def run_extraction(db_path: Path):
                             cultura_criacao, variavel, valor, unidade, regiao_emater, municipio,
                             pagina, secao, evidencia_textual, confianca
                         ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'quantitativa_explicita', ?, ?, 'precipitação', ?, 'mm', '', ?, ?, ?, ?, 'ALTA');
-                    """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, current_crop, current_crop, val, para_mun, page_num, section, para_clean))
+                    """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, para_crop, para_crop, val, para_mun, page_num, section, para_clean))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO evidence_span (
@@ -197,7 +232,7 @@ def run_extraction(db_path: Path):
                                 cultura_criacao, variavel, valor, unidade, regiao_emater, municipio,
                                 pagina, secao, evidencia_textual, confianca
                             ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'extracao_tabular_heuristica', ?, ?, ?, ?, '%', '', ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
-                        """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, current_crop, current_crop, var_name, val, para_mun, page_num, section, line_raw))
+                        """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, para_crop, para_crop, var_name, val, para_mun, page_num, section, line_raw))
 
                         cur.execute("""
                             INSERT OR REPLACE INTO evidence_span (
@@ -238,7 +273,7 @@ def run_extraction(db_path: Path):
                             cultura_criacao, variavel, valor, unidade, regiao_emater, municipio,
                             pagina, secao, evidencia_textual, confianca
                         ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'extracao_narrativa_heuristica', ?, ?, ?, ?, '%', '', ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
-                    """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, current_crop, current_crop, var_name, val, para_mun, page_num, section, para_clean))
+                    """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, para_crop, para_crop, var_name, val, para_mun, page_num, section, para_clean))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO evidence_span (
@@ -273,7 +308,7 @@ def run_extraction(db_path: Path):
                             cultura_criacao, variavel, valor, unidade, regiao_emater, municipio,
                             pagina, secao, evidencia_textual, confianca
                         ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'quantitativa_explicita', ?, ?, 'produtividade', ?, ?, '', ?, ?, ?, ?, 'ALTA');
-                    """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, current_crop, current_crop, val, unid, para_mun, page_num, section, para_clean))
+                    """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, para_crop, para_crop, val, unid, para_mun, page_num, section, para_clean))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO evidence_span (
@@ -307,7 +342,7 @@ def run_extraction(db_path: Path):
                             cultura_criacao, variavel, valor, unidade, regiao_emater, municipio,
                             pagina, secao, evidencia_textual, confianca
                         ) VALUES (?, ?, ?, ?, ?, ?, 'S', 'quantitativa_explicita', ?, ?, 'preço', ?, 'R$/sc', '', ?, ?, ?, ?, 'ALTA');
-                    """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, current_crop, current_crop, val, para_mun, page_num, section, para_clean))
+                    """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, para_crop, para_crop, val, para_mun, page_num, section, para_clean))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO evidence_span (
@@ -341,7 +376,7 @@ def run_extraction(db_path: Path):
                                 efeito_ecologico, efeito_produtivo, efeito_sanitario, efeito_economico,
                                 dimensao, pagina, secao, evidencia_textual, confianca
                             ) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 'perturbacao', ?, ?, 'sim', 'sim', 'sim', 'sim', 'E', ?, ?, ?, 'MÉDIA');
-                        """, (evt_id, doc_id, arq, num_inf, data_pub, data_pub, para_mun, current_crop, ev_class, para_clean, page_num, section, para_clean))
+                        """, (evt_id, doc_id, arq, num_inf, data_pub, data_pub, para_mun, para_crop, ev_class, para_clean, page_num, section, para_clean))
 
                         cur.execute("""
                             INSERT OR REPLACE INTO evidence_span (
