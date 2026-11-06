@@ -93,7 +93,7 @@
 /* CRUD Controls & Modals */
 .head-right-group{display:flex;align-items:center;gap:12px}
 .image-actions-bar{display:flex;align-items:center;gap:6px}
-.btn-subtle{background:#f0f5fa;border:1px solid #d0e0ed;border-radius:6px;color:var(--navy);font-size:.76rem;font-weight:750;padding:6px 11px;display:inline-flex;align-items:center;gap:5px;transition:background .15s,color .15s}
+.btn-subtle{background:#f0f5fa;border:1px solid #d0e0ed;border-radius:6px;color:var(--navy);font-size:.76rem;font-weight:750;padding:6px 11px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;transition:background .15s,color .15s}
 .btn-subtle:hover{background:#e2edf7;color:var(--blue)}
 .btn-subtle.danger{color:#98382b;background:#fdf2f0;border-color:#f4d0cb}
 .btn-subtle.danger:hover{background:#fbe5e1;color:#b22210}
@@ -455,7 +455,25 @@ body.resizing-inspector{cursor:nwse-resize;user-select:none}
 .datatable td {
   padding: 12px 14px;
   border-bottom: 1px solid var(--line);
-  vertical-align: top;
+  vertical-align: middle;
+}
+.datatable td.nowrap {
+  white-space: nowrap;
+}
+.datatable td.col-metric {
+  white-space: nowrap;
+  font-weight: 750;
+  color: var(--blue);
+}
+.datatable td.col-action {
+  white-space: nowrap;
+  width: 1%;
+  text-align: right;
+}
+.datatable td.col-evidence {
+  min-width: 280px;
+  max-width: 500px;
+  line-height: 1.45;
 }
 .datatable tr:hover td {
   background: #f8fbfe;

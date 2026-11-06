@@ -61,8 +61,11 @@ tar -xzf "$ARCHIVE" -C "$STAGING"
 test -x "$STAGING/build/evida-server"
 test -f "$STAGING/web/index.html"
 
-# Copia base de dados e storage de documentos iniciais caso não existam em /var/lib/evida
-if [[ -f "$STAGING/var/evida.sqlite" && ! -f /var/lib/evida/var/evida.sqlite ]]; then
+# Atualiza ou instala a base de dados do corpus e cofre de documentos
+if [[ -f "$STAGING/var/evida.sqlite" ]]; then
+  if [[ -f /var/lib/evida/var/evida.sqlite ]]; then
+    cp /var/lib/evida/var/evida.sqlite "/var/lib/evida/var/evida.sqlite.bak-$$" 2>/dev/null || true
+  fi
   cp "$STAGING/var/evida.sqlite" /var/lib/evida/var/evida.sqlite
 fi
 if [[ -d "$STAGING/storage/documents" ]]; then

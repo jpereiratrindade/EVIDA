@@ -188,20 +188,20 @@ function renderEvents() {
     const local = [e.municipio, e.regiao_emater].filter(Boolean).join(' / ') || 'Rio Grande do Sul';
     return `
       <tr>
-        <td>
+        <td class="nowrap">
           <strong style="font-size:0.78rem;color:var(--navy);">${h(e.evento_id)}</strong><br>
           <small style="color:var(--muted)">${h(e.data_publicacao)}</small>
         </td>
-        <td><span class="badge-class ${badgeClass}">${h(e.classe_evento || 'Geral')}</span></td>
-        <td><strong>${h(local)}</strong></td>
-        <td>${h(e.atividade || 'Agrícola Geral')}</td>
-        <td style="max-width:440px;line-height:1.45;">
+        <td class="nowrap"><span class="badge-class ${badgeClass}">${h(e.classe_evento || 'Geral')}</span></td>
+        <td class="nowrap"><strong>${h(local)}</strong></td>
+        <td class="nowrap">${h(e.atividade || 'Agrícola Geral')}</td>
+        <td class="col-evidence">
           <div style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;" title="${h(e.evidencia_textual)}">
             ${h(e.evidencia_textual || e.descricao_evento)}
           </div>
         </td>
-        <td><span class="page-badge">p. ${h(e.pagina)}</span></td>
-        <td>
+        <td class="nowrap" style="text-align:center;"><span class="page-badge">p. ${h(e.pagina)}</span></td>
+        <td class="col-action">
           <button type="button" class="btn-subtle" onclick="openAuditProof('${h(e.evento_id)}')">
             📜 Prova Documental
           </button>
@@ -256,21 +256,21 @@ function renderObservations() {
     const regiaoStr = [o.municipio, o.regiao_emater].filter(Boolean).join(' / ') || 'RS';
     return `
       <tr>
-        <td>
+        <td class="nowrap">
           <strong style="font-size:0.78rem;color:var(--navy);">${h(o.observacao_id)}</strong><br>
           <small style="color:var(--muted)">${h(o.data_publicacao)}</small>
         </td>
-        <td><strong>${h(o.atividade || 'Geral')}</strong></td>
-        <td>${h(o.variavel || '—')}</td>
-        <td><strong style="color:var(--blue);">${h(metricStr)}</strong></td>
-        <td>${h(regiaoStr)}</td>
-        <td style="max-width:380px;line-height:1.45;">
+        <td class="nowrap"><strong>${h(o.atividade || 'Geral')}</strong></td>
+        <td class="nowrap">${h((o.variavel || '—').replace(/_/g, ' '))}</td>
+        <td class="col-metric">${h(metricStr)}</td>
+        <td class="nowrap">${h(regiaoStr)}</td>
+        <td class="col-evidence">
           <div style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;" title="${h(o.evidencia_textual)}">
             ${h(o.evidencia_textual)}
           </div>
         </td>
-        <td><span class="page-badge">p. ${h(o.pagina)}</span></td>
-        <td>
+        <td class="nowrap" style="text-align:center;"><span class="page-badge">p. ${h(o.pagina)}</span></td>
+        <td class="col-action">
           <button type="button" class="btn-subtle" onclick="openAuditProof('${h(o.observacao_id)}')">
             📜 Prova Documental
           </button>
@@ -438,18 +438,18 @@ async function loadVaultDocuments() {
         : '<span style="background:#fee2e2;color:#991b1b;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:800;">Ausente no cofre</span>';
       return `
         <tr>
-          <td><strong style="color:var(--navy);font-size:0.78rem;">${h(d.documento_id)}</strong></td>
+          <td class="nowrap"><strong style="color:var(--navy);font-size:0.78rem;">${h(d.documento_id)}</strong></td>
           <td>
             <strong>Informativo Conjuntural nº ${h(d.numero_informativo)}</strong><br>
             <small style="color:var(--muted)">${h(d.arquivo)}</small>
           </td>
-          <td>${h(d.data_publicacao)}</td>
-          <td><strong>${d.numero_paginas}</strong> págs</td>
-          <td style="font-size:0.78rem;color:var(--muted);">${number.format(d.caracteres_extraidos)}</td>
+          <td class="nowrap">${h(d.data_publicacao)}</td>
+          <td class="nowrap"><strong>${d.numero_paginas}</strong> págs</td>
+          <td class="nowrap" style="font-size:0.78rem;color:var(--muted);">${number.format(d.caracteres_extraidos)}</td>
           <td>
             <code class="hash-code" style="max-width:280px;display:inline-block;" title="${h(d.sha256)}">${h(d.sha256)}</code>
           </td>
-          <td>${statusHtml}</td>
+          <td class="nowrap">${statusHtml}</td>
         </tr>
       `;
     }).join('');

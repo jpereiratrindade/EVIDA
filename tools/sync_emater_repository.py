@@ -270,6 +270,12 @@ def main():
             print(f"[ingest] Erro ao ingerir {item['title']}: {e}", file=sys.stderr)
 
     print(f"\n[crawler] Sincronização finalizada: {count} novas edições incorporadas à custódia do EVIDA.")
+    if count > 0:
+        try:
+            from extract_corpus_scientific import run_extraction
+            run_extraction(db_path)
+        except Exception as e:
+            print(f"[crawler] Aviso: falha ao extrair observações científicas: {e}", file=sys.stderr)
     return 0
 
 if __name__ == "__main__":
