@@ -433,6 +433,27 @@ std::string audit_proof_to_json(const evida::corpus::AuditProofItem& p) {
   return ss.str();
 }
 
+std::string g_web_root = "";
+
+std::string resolve_web_root(std::string_view explicit_path = "") {
+  if (!explicit_path.empty() && std::filesystem::is_directory(explicit_path)) {
+    return std::string(explicit_path);
+  }
+  if (const char* env = std::getenv("EVIDA_WEB_ROOT")) {
+    if (std::filesystem::is_directory(env)) return std::string(env);
+  }
+  try {
+    std::filesystem::path exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path();
+    if (std::filesystem::is_directory(exe_dir / "web")) return (exe_dir / "web").string();
+    if (std::filesystem::is_directory(exe_dir.parent_path() / "web")) return (exe_dir.parent_path() / "web").string();
+  } catch (...) {}
+  if (std::filesystem::is_directory("web")) return "web";
+#ifdef EVIDA_WEB_ROOT
+  if (std::filesystem::is_directory(EVIDA_WEB_ROOT)) return EVIDA_WEB_ROOT;
+#endif
+  return "web";
+}
+
 http::response<http::string_body> respond(http::status status, unsigned version, const std::string& body, std::string_view content_type = "application/json") {
   http::response<http::string_body> res{status, version};
   res.set(http::field::server, "evida/0.3.2");
@@ -466,7 +487,11 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     if (path == "/" || path == "/index.html" || path == "/app.css" ||
         path == "/app.js" || path == "/favicon.svg") {
       const std::string filename = (path == "/") ? "index.html" : path.substr(1);
-      auto body = (req.method() == http::verb::head) ? "" : file_contents(std::filesystem::path(EVIDA_WEB_ROOT) / filename);
+      auto filepath = std::filesystem::path(g_web_root) / filename;
+      if (!std::filesystem::exists(filepath)) {
+        return respond(http::status::not_found, v, "{\"error\":\"web_asset_not_found\",\"path\":\"" + filename + "\"}");
+      }
+      auto body = (req.method() == http::verb::head) ? "" : file_contents(filepath);
       auto res = respond(http::status::ok, v, body, media_type(path));
       res.set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data:;");
       return res;
@@ -933,8 +958,14 @@ void session(tcp::socket& socket, evida::Store& store, evida::auth::AuthSmtpServ
   beast::error_code ec;
   http::read(socket, buffer, parser, ec);
   if (ec) return;
-  auto res = handle_request(parser.get(), store, auth_service);
-  http::write(socket, res, ec);
+  try {
+    auto res = handle_request(parser.get(), store, auth_service);
+    http::write(socket, res, ec);
+  } catch (const std::exception& ex) {
+    auto res = respond(http::status::internal_server_error, parser.get().version(),
+                       std::string("{\"error\":\"internal_server_error\",\"message\":\"") + ex.what() + "\"}");
+    http::write(socket, res, ec);
+  }
   socket.shutdown(tcp::socket::shutdown_both, ec);
 }
 
@@ -945,6 +976,7 @@ int main(int argc, char* argv[]) {
     unsigned long port = 18142;
     std::string dbfile = "var/evida.sqlite";
     std::string host = "127.0.0.1";
+    std::string explicit_web = "";
     bool dev_mode = false;
     for (int i = 1; i < argc; ++i) {
       if (std::string_view(argv[i]) == "--port" && i + 1 < argc) {
@@ -955,6 +987,8 @@ int main(int argc, char* argv[]) {
         host = "0.0.0.0";
       } else if (std::string_view(argv[i]) == "--db" && i + 1 < argc) {
         dbfile = argv[++i];
+      } else if (std::string_view(argv[i]) == "--web" && i + 1 < argc) {
+        explicit_web = argv[++i];
       } else if (std::string_view(argv[i]) == "--dev") {
         dev_mode = true;
       } else if (std::string_view(argv[i]) == "--prod") {
@@ -981,6 +1015,8 @@ int main(int argc, char* argv[]) {
       }
     }
     if (port == 0 || port > 65535) throw std::runtime_error("Porta inválida");
+
+    g_web_root = resolve_web_root(explicit_web);
 
     evida::Store store(dbfile);
     auto auth_config = evida::auth::AuthSmtpConfig::from_environment();
