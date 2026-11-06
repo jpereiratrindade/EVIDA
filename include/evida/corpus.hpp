@@ -140,6 +140,8 @@ struct BlobIntegrity {
 };
 
 struct AuditProofItem {
+  std::string record_status;
+  std::string review_status;
   std::string entity_id;
   std::string entity_type; // "evento", "observacao", "ocorrencia_municipal", "preco"
   std::string documento_id;

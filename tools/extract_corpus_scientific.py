@@ -7,6 +7,12 @@ Extrai medições quantitativas de campo, dados fenológicos, produtivos e event
 climáticos/fitossanitários a partir das páginas textuais registradas.
 """
 
+import argparse
+import uuid
+from pipeline_state import connect
+
+VERSION = "0.4.0"
+
 import hashlib
 import re
 import sqlite3
@@ -46,9 +52,11 @@ def parse_phenology_table(table_text):
         pcts = re.findall(r'(\d+[\.,]?\d*)\s*%', line_clean)
         if not pcts:
             continue
+        if any(float(v.replace(',', '.')) > 100 for v in pcts):
+            continue
         # Verifica se alguma fase fenológica está presente nesta linha específica
         for key, mapped in PHENOLOGY_MAP.items():
-            if re.search(r'\b' + re.escape(key) + r'\b', line_clean, re.IGNORECASE):
+            if re.match(r'^(?:Em\s+)?' + re.escape(key) + r'\b', line_clean, re.IGNORECASE):
                 # O primeiro percentual da linha é o valor da data da safra atual
                 val = pcts[0]
                 results.append((line_clean, mapped, val))
@@ -71,35 +79,41 @@ def load_municipalities(con: sqlite3.Connection):
     cur = con.cursor()
     muns = {}
     for code, name in cur.execute("SELECT codigo_ibge, municipio FROM municipios_ibge_rs;"):
-        muns[name.lower()] = (code, name)
+        muns[name.lower()] = (code, name, re.compile(r"\b" + re.escape(name) + r"\b", re.IGNORECASE))
     return muns
 
-def run_extraction(db_path: Path):
-    con = sqlite3.connect(str(db_path))
+def run_extraction(db_path: Path, reprocess=False, year=None):
+    import fcntl
+    with open(str(db_path) + '.extract.lock', 'a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError('Outra extração está em execução')
+        con = connect(db_path)
+        try:
+            return _run_extraction(con, reprocess, year)
+        finally:
+            con.close()
+
+
+def _run_extraction(con, reprocess, year):
     cur = con.cursor()
 
     municipalities = load_municipalities(con)
 
-    # Identifica documentos sem observações
     missing_docs = cur.execute("""
         SELECT documento_id, data_publicacao, numero_informativo, arquivo
-        FROM documentos
-        WHERE documento_id NOT IN (SELECT DISTINCT documento_id FROM observacoes)
-        ORDER BY data_publicacao;
-    """).fetchall()
-
+        FROM documentos d WHERE (? IS NULL OR substr(data_publicacao,1,4)=?)
+        AND (? OR NOT EXISTS (SELECT 1 FROM scientific_processing p
+          WHERE p.document_id=d.documento_id AND p.source_sha256=d.sha256
+          AND p.extractor_version=?)) ORDER BY data_publicacao
+    """, (year, str(year) if year else None, reprocess, VERSION)).fetchall()
     if not missing_docs:
-        print("[extractor] Todos os documentos já possuem observações extraídas.")
+        con.close()
         return 0
 
-    print(f"[extractor] Detectados {len(missing_docs)} documentos para extração de observações e eventos.")
-
-    # Obter os últimos contadores
-    last_obs = cur.execute("SELECT max(observacao_id) FROM observacoes;").fetchone()[0] or "OBS-000000"
-    obs_seq = int(re.search(r'\d+', last_obs).group(0))
-
-    last_evt = cur.execute("SELECT max(evento_id) FROM eventos;").fetchone()[0] or "EVT-000000"
-    evt_seq = int(re.search(r'\d+', last_evt).group(0))
+    obs_seq = cur.execute("SELECT COALESCE(max(CAST(substr(observacao_id,5) AS INTEGER)),0) FROM observacoes WHERE observacao_id GLOB 'OBS-[0-9]*'").fetchone()[0]
+    evt_seq = cur.execute("SELECT COALESCE(max(CAST(substr(evento_id,5) AS INTEGER)),0) FROM eventos WHERE evento_id GLOB 'EVT-[0-9]*'").fetchone()[0]
 
     cur.execute("BEGIN TRANSACTION;")
 
@@ -107,6 +121,12 @@ def run_extraction(db_path: Path):
     total_evts = 0
 
     for doc_id, data_pub, num_inf, arq in missing_docs:
+        run_id = "science-" + uuid.uuid4().hex
+        before_obs, before_evts = total_obs, total_evts
+        sha = cur.execute("SELECT sha256 FROM documentos WHERE documento_id=?", (doc_id,)).fetchone()[0]
+        cur.execute("INSERT INTO extraction_run(run_id,document_id,extractor_name,extractor_version,parameters_json) VALUES(?,?, 'evida-scientific',?, '{}')", (run_id,doc_id,VERSION))
+        for table, kind, key in [('observacoes','observacao','observacao_id'),('eventos','evento','evento_id')]:
+            cur.execute(f"INSERT OR IGNORE INTO record_status SELECT ?, {key}, 'superseded', ? FROM {table} WHERE documento_id=?", (kind,run_id,doc_id))
         print(f"\n[extractor] Processando {doc_id} (nº {num_inf}) - {data_pub}...")
         pages = cur.execute("""
             SELECT page_number, text_content
@@ -115,6 +135,8 @@ def run_extraction(db_path: Path):
             ORDER BY page_number;
         """, (doc_id,)).fetchall()
 
+        if not pages or not any(text.strip() for _, text in pages):
+            raise RuntimeError(f"Documento sem texto extraível: {doc_id}")
         for page_num, text in pages:
             lines = text.split("\n")
             page_head = text[:350].lower()
@@ -173,8 +195,8 @@ def run_extraction(db_path: Path):
                 # Identifica se algum município é citado no parágrafo
                 para_mun = ""
                 para_cod_ibge = ""
-                for mun_name, (code, orig_name) in municipalities.items():
-                    if re.search(r'\b' + re.escape(mun_name) + r'\b', para_clean, re.IGNORECASE):
+                for mun_name, (code, orig_name, pattern) in municipalities.items():
+                    if pattern.search(para_clean):
                         para_mun = orig_name
                         para_cod_ibge = code
                         break
@@ -182,7 +204,7 @@ def run_extraction(db_path: Path):
                 # 1. Busca observações de precipitação (X mm)
                 mm_matches = re.finditer(r'(?:variaram entre\s*(\d+[\.,]?\d*)\s*e\s*(\d+[\.,]?\d*)|acumulado(?:s)?(?:\s*de|\s*semanal)?\s*(?:de\s*)?(\d+[\.,]?\d*)|(?:registro|registrado|marca(?:ram)?|volume(?:s)?(?:\s*de)?)\s*(\d+[\.,]?\d*))\s*mm', para_clean, re.IGNORECASE)
                 for m in mm_matches:
-                    val = m.group(2) or m.group(3) or m.group(4) or m.group(1)
+                    val = (m.group(1) + '–' + m.group(2)) if m.group(1) and m.group(2) else (m.group(3) or m.group(4))
                     if not val: continue
                     obs_seq += 1
                     obs_id = f"OBS-{obs_seq:06d}"
@@ -196,15 +218,15 @@ def run_extraction(db_path: Path):
                             data_publicacao, periodo_referencia, dimensao, categoria, atividade,
                             cultura_criacao, variavel, valor, unidade, regiao_emater, municipio,
                             pagina, secao, evidencia_textual, confianca
-                        ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'quantitativa_explicita', ?, ?, 'precipitação', ?, 'mm', '', ?, ?, ?, ?, 'ALTA');
+                        ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'quantitativa_explicita', ?, ?, 'precipitação', ?, 'mm', '', ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
                     """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, para_crop, para_crop, val, para_mun, page_num, section, para_clean))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO evidence_span (
                             evidence_id, extraction_run_id, document_id, page_number,
                             verbatim_text, text_sha256, section_name, confidence
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ALTA');
-                    """, (span_id, f"run-{doc_id}", doc_id, page_num, para_clean, text_sha, section))
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
+                    """, (span_id, run_id, doc_id, page_num, para_clean, text_sha, section))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO record_evidence_link (
@@ -215,7 +237,8 @@ def run_extraction(db_path: Path):
                     total_obs += 1
 
                 # 2. Busca observações de fenologia / percentuais (X %)
-                is_table = ("fases da cultura" in para.lower() or "safra atual" in para.lower() or "safra anterior" in para.lower())
+                is_table = ("fases da cultura" in para.lower() or "safra atual" in para.lower() or "safra anterior" in para.lower()
+                            or len(re.findall(r'\d+[,.]?\d*\s*%', para)) >= 2 and bool(parse_phenology_table(para)))
                 if is_table:
                     table_rows = parse_phenology_table(para)
                     for line_raw, var_name, val in table_rows:
@@ -238,8 +261,8 @@ def run_extraction(db_path: Path):
                             INSERT OR REPLACE INTO evidence_span (
                                 evidence_id, extraction_run_id, document_id, page_number,
                                 verbatim_text, text_sha256, section_name, confidence
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MEDIA');
-                        """, (span_id, f"run-{doc_id}", doc_id, page_num, line_raw, text_sha, section))
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
+                        """, (span_id, run_id, doc_id, page_num, line_raw, text_sha, section))
 
                         cur.execute("""
                             INSERT OR REPLACE INTO record_evidence_link (
@@ -253,6 +276,8 @@ def run_extraction(db_path: Path):
                 pct_matches = re.finditer(r'(\d+[\.,]?\d*)\s*%\s*(?:das\s*lavouras|da\s*área|das\s*áreas)?\s*(?:estão|foram|em|de)?\s*(floração|germinação|emergência|desenvolvimento|enchimento(?:\s*de\s*grãos)?|maturação|colhid[ao]s?|semead[ao]s?|plantad[ao]s?)', para_clean, re.IGNORECASE)
                 for m in pct_matches:
                     val = m.group(1)
+                    if float(val.replace(',', '.')) > 100:
+                        continue
                     phase_raw = m.group(2).lower()
                     var_name = "proporção"
                     for key, mapped in PHENOLOGY_MAP.items():
@@ -279,8 +304,8 @@ def run_extraction(db_path: Path):
                         INSERT OR REPLACE INTO evidence_span (
                             evidence_id, extraction_run_id, document_id, page_number,
                             verbatim_text, text_sha256, section_name, confidence
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MEDIA');
-                    """, (span_id, f"run-{doc_id}", doc_id, page_num, para_clean, text_sha, section))
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
+                    """, (span_id, run_id, doc_id, page_num, para_clean, text_sha, section))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO record_evidence_link (
@@ -291,7 +316,7 @@ def run_extraction(db_path: Path):
                     total_obs += 1
 
                 # 3. Busca produtividade (X kg/ha ou sc/ha)
-                prod_matches = re.finditer(r'(?:produtividade(?:\s*média)?(?:\s*de|\s*estimada\s*em)?|rendimento(?:\s*médio)?)\s*(?:de\s*)?(\d+[\.,]?\d*)\s*(kg/ha|sc/ha|t/ha|toneladas|sacas/ha)', para_clean, re.IGNORECASE)
+                prod_matches = re.finditer(r'(?:produtividade(?:\s*média)?(?:\s*de|\s*estimada\s*em)?|rendimento(?:\s*médio)?)\s*(?:de\s*)?(\d+(?:\.\d{3})*(?:,\d+)?|\d+\.\d+)\s*(kg/ha|sc/ha|t/ha|sacas/ha)', para_clean, re.IGNORECASE)
                 for m in prod_matches:
                     val = m.group(1)
                     unid = m.group(2)
@@ -307,15 +332,15 @@ def run_extraction(db_path: Path):
                             data_publicacao, periodo_referencia, dimensao, categoria, atividade,
                             cultura_criacao, variavel, valor, unidade, regiao_emater, municipio,
                             pagina, secao, evidencia_textual, confianca
-                        ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'quantitativa_explicita', ?, ?, 'produtividade', ?, ?, '', ?, ?, ?, ?, 'ALTA');
+                        ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'quantitativa_explicita', ?, ?, 'produtividade', ?, ?, '', ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
                     """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, para_crop, para_crop, val, unid, para_mun, page_num, section, para_clean))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO evidence_span (
                             evidence_id, extraction_run_id, document_id, page_number,
                             verbatim_text, text_sha256, section_name, confidence
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ALTA');
-                    """, (span_id, f"run-{doc_id}", doc_id, page_num, para_clean, text_sha, section))
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
+                    """, (span_id, run_id, doc_id, page_num, para_clean, text_sha, section))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO record_evidence_link (
@@ -341,15 +366,15 @@ def run_extraction(db_path: Path):
                             data_publicacao, periodo_referencia, dimensao, categoria, atividade,
                             cultura_criacao, variavel, valor, unidade, regiao_emater, municipio,
                             pagina, secao, evidencia_textual, confianca
-                        ) VALUES (?, ?, ?, ?, ?, ?, 'S', 'quantitativa_explicita', ?, ?, 'preço', ?, 'R$/sc', '', ?, ?, ?, ?, 'ALTA');
+                        ) VALUES (?, ?, ?, ?, ?, ?, 'S', 'quantitativa_explicita', ?, ?, 'preço', ?, 'R$ (base não identificada)', '', ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
                     """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, para_crop, para_crop, val, para_mun, page_num, section, para_clean))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO evidence_span (
                             evidence_id, extraction_run_id, document_id, page_number,
                             verbatim_text, text_sha256, section_name, confidence
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ALTA');
-                    """, (span_id, f"run-{doc_id}", doc_id, page_num, para_clean, text_sha, section))
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
+                    """, (span_id, run_id, doc_id, page_num, para_clean, text_sha, section))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO record_evidence_link (
@@ -375,15 +400,15 @@ def run_extraction(db_path: Path):
                                 atividade, tipo_evento, classe_evento, descricao_evento,
                                 efeito_ecologico, efeito_produtivo, efeito_sanitario, efeito_economico,
                                 dimensao, pagina, secao, evidencia_textual, confianca
-                            ) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 'perturbacao', ?, ?, 'sim', 'sim', 'sim', 'sim', 'E', ?, ?, ?, 'MÉDIA');
+                            ) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 'perturbacao', ?, ?, 'não determinado', 'não determinado', 'não determinado', 'não determinado', 'E', ?, ?, ?, 'CANDIDATO_HEURISTICO');
                         """, (evt_id, doc_id, arq, num_inf, data_pub, data_pub, para_mun, para_crop, ev_class, para_clean, page_num, section, para_clean))
 
                         cur.execute("""
                             INSERT OR REPLACE INTO evidence_span (
                                 evidence_id, extraction_run_id, document_id, page_number,
                                 verbatim_text, text_sha256, section_name, confidence
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ALTA');
-                        """, (span_id, f"run-{doc_id}", doc_id, page_num, para_clean, text_sha, section))
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
+                        """, (span_id, run_id, doc_id, page_num, para_clean, text_sha, section))
 
                         cur.execute("""
                             INSERT OR REPLACE INTO record_evidence_link (
@@ -394,6 +419,8 @@ def run_extraction(db_path: Path):
                         total_evts += 1
                         break
 
+        cur.execute("INSERT INTO scientific_processing(run_id,document_id,source_sha256,extractor_version,observation_count,event_count) VALUES(?,?,?,?,?,?)", (run_id,doc_id,sha,VERSION,total_obs-before_obs,total_evts-before_evts))
+        cur.execute("UPDATE extraction_run SET page_count=?,record_count=? WHERE run_id=?", (len(pages),total_obs-before_obs+total_evts-before_evts,run_id))
     con.commit()
     print(f"\n[extractor] Extração finalizada com sucesso!")
     print(f"  -> Novas Observações inseridas: {total_obs}")
@@ -401,6 +428,9 @@ def run_extraction(db_path: Path):
     return 0
 
 if __name__ == "__main__":
-    root = Path(__file__).resolve().parent.parent
-    db = root / "var/evida.sqlite"
-    sys.exit(run_extraction(db))
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--db', type=Path, default=Path('var/evida.sqlite'))
+    parser.add_argument('--year', type=int)
+    parser.add_argument('--reprocess', action='store_true')
+    args = parser.parse_args()
+    sys.exit(run_extraction(args.db, args.reprocess, args.year))

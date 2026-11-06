@@ -154,6 +154,11 @@ std::string stats_json(evida::Store& store, int ano = 0) {
   }
   auto count_filtered = [&](const char* table, const char* col) -> int64_t {
     std::string q = "SELECT count(*) FROM " + std::string(table) + " WHERE substr(" + col + ", 1, 4) = '" + std::to_string(ano) + "';";
+    if (std::string(table) == "observacoes" || std::string(table) == "eventos") {
+      const bool obs = std::string(table) == "observacoes";
+      q.pop_back();
+      q += " AND NOT EXISTS (SELECT 1 FROM record_status WHERE record_type='" + std::string(obs ? "observacao" : "evento") + "' AND record_id=" + (obs ? "observacao_id" : "evento_id") + " AND status='superseded');";
+    }
     sqlite3_stmt* s = nullptr;
     int64_t cnt = 0;
     if (sqlite3_prepare_v2(store.db(), q.c_str(), -1, &s, nullptr) == SQLITE_OK) {
@@ -413,7 +418,9 @@ std::string vault_documents_to_json(const std::vector<evida::corpus::VaultDocume
 std::string audit_proof_to_json(const evida::corpus::AuditProofItem& p) {
   std::ostringstream ss;
   ss << "{\"proof\":{"
-     << "\"entity_id\":" << q(p.entity_id)
+     << "\"record_status\":" << q(p.record_status)
+     << ",\"review_status\":" << q(p.review_status)
+     << ",\"entity_id\":" << q(p.entity_id)
      << ",\"entity_type\":" << q(p.entity_type)
      << ",\"documento_id\":" << q(p.documento_id)
      << ",\"arquivo\":" << q(p.arquivo)
@@ -545,6 +552,41 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     return respond(http::status::ok, v, stats_json(store, ano));
   }
 
+  if (req.method() == http::verb::get && path == "/api/v1/collection/status") {
+    sqlite3_stmt* stmt = nullptr;
+    std::ostringstream ss;
+    ss << "{\"runs\":[";
+    const char* sql = "SELECT run_id,year,started_at,COALESCE(finished_at,''),status,discovered,incorporated,errors_json FROM collection_run ORDER BY started_at DESC,rowid DESC LIMIT 20";
+    bool first = true;
+    if (sqlite3_prepare_v2(store.db(),sql,-1,&stmt,nullptr) == SQLITE_OK) {
+      while (sqlite3_step(stmt) == SQLITE_ROW) {
+        auto col = [&](int i) { const auto* t=sqlite3_column_text(stmt,i); return t ? std::string(reinterpret_cast<const char*>(t)) : std::string(); };
+        if (!first) ss << ",";
+        first=false;
+        ss << "{\"run_id\":" << q(col(0)) << ",\"year\":" << sqlite3_column_int(stmt,1)
+           << ",\"started_at\":" << q(col(2)) << ",\"finished_at\":" << q(col(3))
+           << ",\"status\":" << q(col(4)) << ",\"discovered\":" << sqlite3_column_int(stmt,5)
+           << ",\"incorporated\":" << sqlite3_column_int(stmt,6) << ",\"errors\":" << col(7);
+        sqlite3_stmt* months=nullptr;
+        ss << ",\"months\":[";
+        if (sqlite3_prepare_v2(store.db(),"SELECT month,status,documents FROM collection_month WHERE run_id=? ORDER BY month",-1,&months,nullptr)==SQLITE_OK) {
+          sqlite3_bind_text(months,1,col(0).c_str(),-1,SQLITE_TRANSIENT);
+          bool mf=true;
+          while (sqlite3_step(months)==SQLITE_ROW) {
+            if (!mf) ss << ",";
+            mf=false;
+            ss << "{\"month\":" << sqlite3_column_int(months,0) << ",\"status\":" << q(reinterpret_cast<const char*>(sqlite3_column_text(months,1))) << ",\"documents\":" << sqlite3_column_int(months,2) << "}";
+          }
+        }
+        sqlite3_finalize(months);
+        ss << "]}";
+      }
+    }
+    sqlite3_finalize(stmt);
+    ss << "],\"coverage_complete\":false}";
+    return respond(http::status::ok,v,ss.str());
+  }
+
   if (req.method() == http::verb::get && path == "/api/v1/years") {
     sqlite3_stmt* stmt = nullptr;
     const char* sql = "SELECT substr(data_publicacao, 1, 4) as yr, count(*) as docs FROM documentos WHERE data_publicacao IS NOT NULL GROUP BY yr ORDER BY yr DESC;";
@@ -563,7 +605,7 @@ http::response<http::string_body> handle_request(const http::request<http::strin
       }
       sqlite3_finalize(stmt);
     }
-    ss << "],\"available_remote\":[2026, 2025, 2024, 2023, 2022, 2021, 2020]}";
+    ss << "]}";
     return respond(http::status::ok, v, ss.str());
   }
 

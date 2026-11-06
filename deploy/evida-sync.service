@@ -1,22 +1,20 @@
 [Unit]
-Description=EVIDA — Sincronização Semanal do Repositório Emater/RS
+Description=EVIDA — Coleta e extração dos informativos Emater/RS
 After=network-online.target
 Wants=network-online.target
-Documentation=https://github.com/jpereiratrindade/EVIDA
 
 [Service]
 Type=oneshot
-User=jpereiratrindade
-Group=jpereiratrindade
-WorkingDirectory=/run/media/jpereiratrindade/labeco10T/dev/cpp/evida
-ExecStart=/usr/bin/python3 /run/media/jpereiratrindade/labeco10T/dev/cpp/evida/tools/sync_emater_repository.py --cron
+User=root
+WorkingDirectory=/var/lib/evida
+Environment=TZ=America/Sao_Paulo
+ExecStart=/usr/bin/python3 /usr/local/share/evida/current/tools/sync_emater_repository.py --cron --db /var/lib/evida/var/evida.sqlite --storage /var/lib/evida/storage/documents
 StandardOutput=journal
 StandardError=journal
-
-# Limites de recursos
+TimeoutStartSec=2h
 MemoryMax=512M
 CPUQuota=50%
 NoNewPrivileges=true
-ProtectSystem=full
-ProtectHome=read-only
-ReadWritePaths=/run/media/jpereiratrindade/labeco10T/dev/cpp/evida/var /run/media/jpereiratrindade/labeco10T/dev/cpp/evida/storage
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/evida

@@ -9,10 +9,10 @@
 
 namespace evida {
 
-inline constexpr std::string_view VERSION = "0.3.2";
+inline constexpr std::string_view VERSION = "0.3.3";
 inline constexpr int VERSION_MAJOR = 0;
 inline constexpr int VERSION_MINOR = 3;
-inline constexpr int VERSION_PATCH = 2;
+inline constexpr int VERSION_PATCH = 3;
 inline constexpr std::string_view RELEASE_NAME = "Consistência Probatória";
 
 } // namespace evida

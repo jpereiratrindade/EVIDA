@@ -11,7 +11,8 @@ RELEASE_ID="${2:-$(git -C "$ROOT" rev-parse --short=12 HEAD)}"
   echo "release-id inválido" >&2
   exit 2
 }
-[[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]] || {
+WORKTREE="${3:-}"
+[[ "$WORKTREE" == "--worktree" || -z "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]] || {
   echo "Há alterações rastreadas sem commit; faça commit antes de empacotar." >&2
   exit 1
 }
@@ -33,13 +34,22 @@ STAGING="$(mktemp -d)"
 cleanup() { rm -rf -- "$STAGING"; }
 trap cleanup EXIT
 
-git -C "$ROOT" archive HEAD | tar -x -C "$STAGING"
+if [[ "$WORKTREE" == "--worktree" ]]; then
+  git -C "$ROOT" ls-files --cached --others --exclude-standard -z -- CMakeLists.txt LICENSE README.md cmake config deploy docs include ops scripts src storage/migrations tests tools web |
+    tar -C "$ROOT" --null -T - -cf - | tar -xf - -C "$STAGING"
+else
+  git -C "$ROOT" archive HEAD | tar -x -C "$STAGING"
+fi
 install -d "$STAGING/build" "$STAGING/var" "$STAGING/storage/documents"
 install -m 0755 "$BUILD_DIR/evida-server" "$STAGING/build/evida-server"
 
 # Inclui base de dados do corpus e cofre de documentos na release
 if [[ -f "$ROOT/var/evida.sqlite" ]]; then
-  cp "$ROOT/var/evida.sqlite" "$STAGING/var/evida.sqlite"
+  python3 - "$ROOT/var/evida.sqlite" "$STAGING/var/evida.sqlite" <<'PYBACKUP'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as source, sqlite3.connect(sys.argv[2]) as target:
+    source.backup(target)
+PYBACKUP
 fi
 if [[ -d "$ROOT/storage/documents" ]]; then
   cp -a "$ROOT/storage/documents/"* "$STAGING/storage/documents/" 2>/dev/null || true

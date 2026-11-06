@@ -1,10 +1,8 @@
 [Unit]
-Description=EVIDA — Timer Semanal de Ingestão de Informativos Emater/RS
-Documentation=https://github.com/jpereiratrindade/EVIDA
+Description=EVIDA — Consulta diária do acervo Emater/RS
 
 [Timer]
-# Executa toda quinta-feira às 18:30 (horário de publicação semanal da Emater/RS)
-OnCalendar=Thu *-*-* 18:30:00
+OnCalendar=*-*-* 18:30:00 America/Sao_Paulo
 Persistent=true
 RandomizedDelaySec=300
 

@@ -66,6 +66,7 @@ Store::Store(const std::string& filename) {
     db_ = nullptr;
     throw std::runtime_error("Não foi possível abrir o banco: " + why);
   }
+  sqlite3_busy_timeout(db_, 30000);
   try { migrate(); } catch (...) { sqlite3_close(db_); db_ = nullptr; throw; }
 }
 
@@ -73,7 +74,9 @@ Store::~Store() { if (db_) sqlite3_close(db_); }
 
 void Store::migrate() {
   execute(db_, "PRAGMA foreign_keys=ON;");
-  const auto mig_dir = std::filesystem::path(EVIDA_MIGRATIONS_DIR);
+  auto mig_dir = std::filesystem::path(EVIDA_MIGRATIONS_DIR);
+  const auto installed = std::filesystem::read_symlink("/proc/self/exe").parent_path().parent_path() / "storage/migrations";
+  if (std::filesystem::exists(installed)) mig_dir = installed;
   int v = get_user_version(db_);
 
   if (v < 1) {
@@ -88,6 +91,8 @@ void Store::migrate() {
   if (v < 4) {
     apply_file(db_, mig_dir / "004_document_custody_provenance.sql");
   }
+  if (v < 5) apply_file(db_, mig_dir / "005_collection_runs.sql");
+  if (v < 6) apply_file(db_, mig_dir / "006_page_checksum_history.sql");
   evida::corpus::backfill_provenance_if_needed(db_);
 }
 
@@ -99,8 +104,8 @@ Stats Store::stats() const {
   }
   s.evidences = count_rows(db_, "evidence");
   s.users = count_rows(db_, "users");
-  s.events = count_rows(db_, "eventos");
-  s.observations = count_rows(db_, "observacoes");
+  s.events = count_rows(db_, "eventos WHERE NOT EXISTS (SELECT 1 FROM record_status WHERE record_type='evento' AND record_id=evento_id AND status='superseded')");
+  s.observations = count_rows(db_, "observacoes WHERE NOT EXISTS (SELECT 1 FROM record_status WHERE record_type='observacao' AND record_id=observacao_id AND status='superseded')");
   s.responses = count_rows(db_, "respostas");
   s.prices = count_rows(db_, "precos");
   s.episodes = count_rows(db_, "episodios");

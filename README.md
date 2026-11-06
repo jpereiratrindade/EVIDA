@@ -1,10 +1,10 @@
 # EVIDA — Sistema Científico de Evidências Documentais e Análise
 
-**Sempre pronto. Sempre incompleto.** Versão 0.3.2 (*Consistência Probatória*).
+**Sempre pronto. Sempre incompleto.** Versão 0.3.3 (*Consistência Probatória*).
 
 Sistema científico independente para estudar documentos, preservar proveniência estrita,
 examinar relações narrativas e construir análises temporais, territoriais e de redes.
-Corpus ativo: Informativos Conjunturais Emater/RS-Ascar (2026).
+Corpus: Informativos Conjunturais Emater/RS-Ascar, com cobertura por ano em construção.
 
 ## Licença
 
@@ -18,18 +18,27 @@ Consulte o arquivo [`LICENSE`](file:///run/media/jpereiratrindade/labeco10T/dev/
 - **Proveniência M:N e Revisão Humana:** Vínculos explícitos (`supports`, `revises`, `disputes`) conectam registros analíticos aos trechos literais (`evidence_span`). Revisões de pesquisadores são registradas na entidade `review_decision`, preservando o extrato original intacto.
 - **Isolamento de Rede:** Servidor vinculado estritamente ao loopback local `127.0.0.1`, sem exposição em interfaces externas e com `dev_mode` desativado por padrão.
 
-## Corpus Científico Auditado (2026)
+## Coleta, cobertura e revisão
 
-| Dimensão Científica | Quantidade Catalogada | Proveniência |
-| :--- | :--- | :--- |
-| **Documentos sob Custódia** | 34 relatórios completos | SHA-256 verificado dinamicamente no disco |
-| **Páginas de Proveniência** | 1.272 páginas indexadas | Mapeadas por `document_page_provenance` |
-| **Eventos & Riscos** | 2.354 eventos relatados | 100% vinculados com cadeia documental rastreável |
-| **Observações & Métricas** | 5.230 medições de campo | 100% vinculadas com cadeia documental rastreável |
-| **Ocorrências Municipais** | 356 relatos territoriais | 100% vinculados aos municípios e informativos |
-| **Territórios IBGE (RS)** | 497 municípios mapeados | Códigos de 7 dígitos e ocorrências nominais |
-| **Episódios & Trajetórias** | 326 episódios contínuos | Agrupamentos em janelas temporais de 21 dias |
-| **Cotações de Preços** | 1.387 séries históricas | Produtos agrícolas nas regiões da Emater |
+O acervo contém informativos de múltiplos anos. Quantidades atuais são consultadas
+em `/api/v1/years` e `/api/v1/stats`; não representam certificação de completude.
+O histórico de consultas por mês e falhas está em `/api/v1/collection/status`.
+Execução concluída significa que as consultas terminaram, não que todo documento
+historicamente publicado está presente.
+
+A coleta diária às 18h30 (America/Sao_Paulo, até 5 minutos de atraso aleatório)
+consulta o ano corrente, verifica os PDFs conhecidos para detectar revisões e
+registra falhas. Novas tentativas ocorrem nas execuções diárias seguintes.
+Anos anteriores são solicitados explicitamente. PDFs e versões textuais anteriores
+são preservados. Reprocessamentos mantêm os registros anteriores com status
+`superseded`; decisões humanas não são apagadas.
+
+Resultados da extração automática são candidatos heurísticos, inclusive as tabelas.
+Unidades ambíguas não são inventadas; intervalos de chuva preservam ambos os limites.
+O extrator é conservador e não cobre todos os tipos de tabela ou todas as variáveis.
+A auditoria verifica bytes, referências e vínculos, sem certificar interpretação
+semântica, independência das observações ou completude histórica.
+Séries e ocorrências legadas não são reconstruídas pelo extrator quantitativo.
 
 ## Compilação e Execução (Fedora / Linux)
 

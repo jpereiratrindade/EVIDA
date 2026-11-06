@@ -58,12 +58,17 @@ def main():
             else:
                 raise AssertionError("Servidor não iniciou em 5 segundos")
             assert health["status"] == "ok"
-            assert health["version"] in ("0.3.1", "0.3.2")
+            assert health["version"] in ("0.3.3",)
 
             with urllib.request.urlopen(base + "/api/v1/stats") as response:
                 stats = json.load(response)
                 assert stats["documents"] >= 0
                 assert stats["users"] >= 2
+
+            with urllib.request.urlopen(base + "/api/v1/collection/status") as response:
+                collection = json.load(response)
+                assert collection['runs'] == []
+                assert collection['coverage_complete'] is False
 
             with urllib.request.urlopen(base + "/api/v1/capabilities") as response:
                 caps = json.load(response)

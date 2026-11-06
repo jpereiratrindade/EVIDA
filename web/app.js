@@ -130,7 +130,7 @@ function hideAuthOverlay() {
 }
 
 // ----------------- SELETOR MULTI-ANO E SÍNTESE TEMÁTICA -----------------
-let currentYear = '2026';
+let currentYear = '';
 let activeObsTheme = null;
 let activeEventsClass = null;
 
@@ -146,8 +146,23 @@ async function loadYearsList() {
       html += `<option value="${y.ano}" ${isSel}>${y.ano} (${y.documentos} informativos)</option>`;
     }
     html += `<option value="todos" ${currentYear === '' ? 'selected' : ''}>Todos os Anos</option>`;
-    html += `<option value="import_emater">+ Ingerir 2024 / 2025 da Emater...</option>`;
+    html += `<option value="import_emater">Instruções para importar outro ano…</option>`;
     sel.innerHTML = html;
+    const cards = $('vault-year-cards');
+    if (cards) {
+      cards.replaceChildren();
+      for (const y of [...active, {ano: 'todos', documentos: active.reduce((n, item) => n + item.documentos, 0)}]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'synthesis-card clickable';
+        button.dataset.year = String(y.ano);
+        button.textContent = `${y.ano === 'todos' ? 'Todos os anos' : y.ano}: ${number.format(y.documentos)} documentos cadastrados`;
+        button.addEventListener('click', () => filterVaultYear(String(y.ano)));
+        cards.appendChild(button);
+      }
+    }
+    const status = $('service-state');
+    if (status) status.textContent = currentYear ? `Corpus ${currentYear}` : 'Corpus de todos os anos';
   } catch (err) {
     console.warn('Falha ao listar anos:', err);
   }
@@ -163,6 +178,7 @@ function onYearChange() {
     return;
   }
   currentYear = val === 'todos' ? '' : val;
+  vaultYear = currentYear;
   const stateEl = $('service-state');
   if (stateEl) {
     stateEl.textContent = currentYear ? `Corpus ${currentYear} Ativo` : 'Corpus Multi-ano Ativo';
@@ -175,15 +191,15 @@ function onYearChange() {
 }
 
 function promptImportYear() {
-  const yr = prompt('Digite o ano que deseja sincronizar da Emater/RS (ex: 2024 ou 2025):', '2024');
+  const yr = prompt('Digite o ano que deseja sincronizar da Emater/RS (ex: 2024 ou 2025):', String(new Date().getFullYear() - 1));
   if (!yr) return;
   const yearInt = parseInt(yr.trim(), 10);
-  if (isNaN(yearInt) || yearInt < 2015 || yearInt > 2026) {
-    alert('Por favor informe um ano válido entre 2015 e 2026.');
+  if (isNaN(yearInt) || yearInt < 2015 || yearInt > new Date().getFullYear()) {
+    alert(`Informe um ano entre 2015 e ${new Date().getFullYear()}.`);
     return;
   }
-  toast(`Iniciando checagem de acervo da Emater para ${yearInt}…`);
-  alert(`Para ingestão em lote do acervo histórico de ${yearInt} mantendo a custódia epistêmica estrita:\n\nExecute no terminal:\npython3 tools/sync_emater_repository.py --year ${yearInt} --extract\n\nIsso baixará as edições oficiais de ${yearInt}, calculará os hashes de custódia e indexará todas as evidências com vínculo criptográfico.`);
+  toast(`Instruções de coleta para ${yearInt}`);
+  alert(`Para ingestão em lote do acervo histórico de ${yearInt} mantendo a custódia epistêmica estrita:\n\nExecute no terminal:\npython3 tools/sync_emater_repository.py --year ${yearInt}\n\nIsso baixará as edições oficiais de ${yearInt}, calculará os hashes de custódia e indexará todas as evidências com vínculo criptográfico.`);
 }
 
 function filterEventsClass(cls) {
@@ -273,7 +289,26 @@ function clearObsFilter() {
 
 // ----------------- CARREGAMENTO DE DADOS -----------------
 
+async function loadCollectionStatus() {
+  const box = $('collection-coverage');
+  if (!box) return;
+  try {
+    const [data, inventory] = await Promise.all([api('/api/v1/collection/status'), api('/api/v1/years')]);
+    const counts = (inventory.active_years || []).map(y => `${y.ano}: ${number.format(y.documentos)} documentos`).join(' · ');
+    const runs = data.runs || [];
+    if (!runs.length) {
+      box.textContent = `${counts}. Sem histórico de consultas registrado. Documentos existentes não comprovam cobertura completa.`;
+      return;
+    }
+    const labels = {completed:'consulta concluída', partial:'execução parcial', running:'em execução', interrupted:'execução interrompida', falha:'falha', consultado:'consultado', sem_edicoes:'nenhuma edição encontrada'};
+    box.innerHTML = `<p>${h(counts)}</p>` + runs.map(r => `<p><strong>${h(r.year)}</strong> — ${h(labels[r.status] || r.status)}; início ${h(r.started_at)} UTC; ${number.format(r.discovered)} edições encontradas, ${number.format(r.incorporated)} incorporadas.<br><small>${(r.months || []).map(m => `${m.month}: ${h(labels[m.status] || m.status)} (${m.documents})`).join(' · ')}</small>${r.errors.length ? `<br><small>${r.errors.map(h).join('; ')}</small>` : ''}</p>`).join('');
+  } catch (err) {
+    box.textContent = 'Não foi possível consultar o histórico de coleta.';
+  }
+}
+
 async function loadStats() {
+  loadCollectionStatus();
   try {
     let url = '/api/v1/stats';
     if (currentYear) url += `?ano=${encodeURIComponent(currentYear)}`;
@@ -491,9 +526,9 @@ async function selectMunicipality(codigo, nome) {
     if (ocs.length === 0) {
       listEl.innerHTML = `
         <div style="padding:28px 16px;text-align:center;background:#f8fafc;border-radius:8px;border:1px dashed var(--line);">
-          <strong style="color:var(--navy);display:block;margin-bottom:6px;">Nenhuma ocorrência documentada explícita em 2026</strong>
+          <strong style="color:var(--navy);display:block;margin-bottom:6px;">Nenhuma ocorrência documentada neste acervo</strong>
           <p style="color:var(--muted);font-size:0.84rem;margin:0;">
-            O município de ${h(nome)} pertence à base dos 497 municípios do RS, mas não teve menção nominal isolada nos informativos de 2026 analisados até agora.
+            O município de ${h(nome)} pertence à base dos 497 municípios do RS, mas não teve menção nominal isolada nos informativos analisados até agora.
           </p>
         </div>
       `;
@@ -566,14 +601,14 @@ async function loadEpisodes() {
 }
 
 // ----------------- COFRE & CUSTÓDIA CRIPTOGRÁFICA -----------------
-let vaultYear = '2026';
+let vaultYear = '';
 let allVaultDocs = [];
 
 function filterVaultYear(yr) {
   vaultYear = yr === 'todos' ? '' : yr;
   
   document.querySelectorAll('#vault-year-cards .synthesis-card').forEach(card => {
-    card.classList.toggle('active', card.getAttribute('onclick')?.includes(yr));
+    card.classList.toggle('active', card.dataset.year === yr);
   });
 
   const bar = $('vault-active-filter-bar');
@@ -581,8 +616,8 @@ function filterVaultYear(yr) {
   const title = $('vault-section-title');
   if (text) {
     if (!vaultYear) {
-      text.innerHTML = 'Exibindo acervo consolidado: <strong>Todos os 150 Informativos (2024–2026)</strong>';
-      if (title) title.textContent = 'Acervo Completo em Custódia (150 Informativos)';
+      text.innerHTML = 'Exibindo acervo consolidado: <strong>Informativos cadastrados de todos os anos</strong>';
+      if (title) title.textContent = 'Documentos cadastrados em custódia';
     } else {
       text.innerHTML = `Exibindo acervo de: <strong>Safra ${vaultYear}</strong>`;
       if (title) title.textContent = `Informativos de ${vaultYear} Preservados em Custódia`;
@@ -673,8 +708,10 @@ async function openAuditProof(entityId) {
     const p = res.proof;
     if (!p) throw new Error('Dados de auditoria não localizados');
 
+    $('review-status-badge').textContent = p.review_status === 'reviewed' ? 'Revisado' : p.review_status === 'disputed' ? 'Contestado' : p.review_status === 'rejected' ? 'Rejeitado' : 'Extração automática; revisão pendente';
+    $('review-status-badge').className = `badge-class ${p.review_status === 'reviewed' ? 'produtiva' : 'seca'}`;
     $('audit-doc-name').textContent = `${p.arquivo || p.documento_id} (Informativo nº ${p.numero_informativo || '—'})`;
-    $('audit-doc-date').textContent = `Publicado em ${p.data_publicacao || '—'}`;
+    $('audit-doc-date').textContent = `Publicado em ${p.data_publicacao || '—'} · ${p.record_status === 'superseded' ? 'Registro substituído; preservado no histórico' : 'Registro ativo'} · Revisão: ${p.review_status || 'não registrada'}`;
     $('audit-page-loc').textContent = `Página ${p.pagina || '—'}`;
     $('audit-page-num-tag').textContent = `Pág. ${p.pagina || '—'}`;
     $('audit-sha256').textContent = p.sha256 || '—';

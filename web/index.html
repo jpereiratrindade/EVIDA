@@ -79,9 +79,9 @@
       <div class="year-selector-wrap">
         <label for="global-year-select" class="year-label">Ano:</label>
         <select id="global-year-select" class="select-year" onchange="onYearChange()">
-          <option value="2026" selected>2026 (44 informativos)</option>
-          <option value="todos">Todos os Anos</option>
-          <option value="import_emater">+ Ingerir 2024 / 2025 da Emater...</option>
+          <option value="todos" selected>Todos os anos cadastrados</option>
+
+          <option value="import_emater">Instruções de importação…</option>
         </select>
       </div>
 
@@ -102,6 +102,11 @@
     </header>
 
     <main id="main" tabindex="-1">
+      <section class="panel" style="margin:16px;padding:16px" aria-label="Cobertura do acervo">
+        <strong>Coleta e cobertura documental</strong>
+        <p>Registros extraídos automaticamente são candidatos à revisão humana. Contagens não representam medições independentes nem comprovam cobertura completa.</p>
+        <div id="collection-coverage">Carregando histórico de coleta…</div>
+      </section>
 
       <!-- VIEW: VISÃO GERAL -->
       <section class="view" id="view-visao" aria-labelledby="visao-title">
@@ -109,7 +114,7 @@
           <div class="hero-copy">
             <span class="eyebrow">OBSERVAR · PRESERVAR · EVIDENCIAR</span>
             <h1 id="visao-title">Evidências científicas com <em>prova documental verificável.</em></h1>
-            <p id="hero-subtitle">Corpus Consolidado da Emater/RS-Ascar (Multi-ano: 2024 a 2026). Cada evento climático, métrica produtiva e menção municipal é indexada como evidência documental com vínculo criptográfico ao PDF fonte original.</p>
+            <p id="hero-subtitle">Acervo documental da Emater/RS-Ascar. Cobertura histórica em construção. Cada evento climático, métrica produtiva e menção municipal é indexada como evidência documental com vínculo criptográfico ao PDF fonte original.</p>
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
               <button class="button white" id="hero-go-events" type="button">⌁ Explorar Eventos &amp; Riscos <span aria-hidden="true">→</span></button>
               <button class="button outline-hero" id="hero-go-territories" type="button">⌖ Municípios IBGE</button>
@@ -123,7 +128,7 @@
               <circle cx="130" cy="112" r="92" stroke-width="1.2" stroke-opacity="0.22" stroke-dasharray="4 6"/>
               <circle cx="130" cy="112" r="68" stroke-width="1.5" stroke-opacity="0.35"/>
               <circle cx="130" cy="112" r="44" stroke-width="1.8" stroke-opacity="0.55"/>
-              
+
               <!-- Malha Epistêmica Externa (Documentos & Territórios) -->
               <polygon points="130,22 210,68 210,156 130,202 50,156 50,68" stroke-width="1.6" stroke-opacity="0.45"/>
               <line x1="130" y1="22" x2="130" y2="202" stroke-width="1.2" stroke-opacity="0.25"/>
@@ -163,22 +168,22 @@
         <div class="statgrid">
           <article class="stat clickable" id="card-stat-events">
             <span>Eventos &amp; Danos</span>
-            <strong id="stat-events">2.354</strong>
+            <strong id="stat-events">—</strong>
             <small>Seca, chuvas, pragas e doenças</small>
           </article>
           <article class="stat clickable" id="card-stat-obs">
-            <span>Observações &amp; Medições</span>
-            <strong id="stat-observations">5.230</strong>
+            <span>Registros quantitativos extraídos</span>
+            <strong id="stat-observations">—</strong>
             <small>Precipitação (mm), colheita e produtividade</small>
           </article>
           <article class="stat clickable" id="card-stat-muns">
             <span>Territórios IBGE (RS)</span>
-            <strong id="stat-municipalities">497</strong>
-            <small>356 ocorrências municipais mapeadas</small>
+            <strong id="stat-municipalities">—</strong>
+            <small>Base territorial de referência; relatos municipais são documentais</small>
           </article>
           <article class="stat clickable" id="card-stat-vault">
             <span>Documentos sob Custódia</span>
-            <strong id="stat-documents">150</strong>
+            <strong id="stat-documents">—</strong>
             <small id="stat-documents-label">Informativos com SHA-256 no cofre</small>
           </article>
         </div>
@@ -201,8 +206,8 @@
           </article>
           <article class="panel fact">
             <span class="fact-icon">04</span>
-            <h2>Origem das 8.416 Observações</h2>
-            <p>Extraídas semanalmente das tabelas e laudos técnicos dos 150 informativos oficiais: rendimentos físicos (kg/ha), fases fenológicas da safra (floração, colheita em %), precipitação acumulada (mm), áreas (ha) e cotações de preços (R$/saca), cada qual auditável com citação literal e página no PDF original.</p>
+            <h2>Origem dos registros quantitativos</h2>
+            <p>Extração automática de informações dos informativos da Emater/RS-Ascar. Um documento pode gerar vários registros; eles não representam medições independentes. As regras não cobrem todos os formatos e variáveis. A interpretação exige revisão humana, além da consulta ao trecho e à página de origem.</p>
           </article>
         </div>
       </section>
@@ -560,44 +565,11 @@
         </div>
 
         <!-- SÍNTESE TEMPORAL: DOCUMENTOS DO COFRE -->
-        <div class="synthesis-panel" id="vault-year-cards">
-          <article class="synthesis-card clickable active" onclick="filterVaultYear('2026')">
-            <div class="synthesis-icon">📅</div>
-            <div class="synthesis-info">
-              <h3>Safra 2026</h3>
-              <p>44 informativos semanais oficiais</p>
-              <span class="synthesis-action">Ver acervo 2026 →</span>
-            </div>
-          </article>
-          <article class="synthesis-card clickable" onclick="filterVaultYear('2025')">
-            <div class="synthesis-icon">📚</div>
-            <div class="synthesis-info">
-              <h3>Safra 2025</h3>
-              <p>53 informativos semanais (ano completo)</p>
-              <span class="synthesis-action">Ver acervo 2025 →</span>
-            </div>
-          </article>
-          <article class="synthesis-card clickable" onclick="filterVaultYear('2024')">
-            <div class="synthesis-icon">🌊</div>
-            <div class="synthesis-info">
-              <h3>Safra 2024 (Enchentes)</h3>
-              <p>53 informativos (inclui maio/2024)</p>
-              <span class="synthesis-action">Ver acervo 2024 →</span>
-            </div>
-          </article>
-          <article class="synthesis-card clickable" onclick="filterVaultYear('todos')">
-            <div class="synthesis-icon">🗄️</div>
-            <div class="synthesis-info">
-              <h3>Acervo Consolidado</h3>
-              <p>Todos os 150 informativos (2024-2026)</p>
-              <span class="synthesis-action">Exibir acervo completo →</span>
-            </div>
-          </article>
-        </div>
+        <div class="synthesis-panel" id="vault-year-cards"></div>
 
         <div id="vault-active-filter-bar" class="active-filter-bar">
-          <span id="vault-active-filter-text">Exibindo informativos de: <strong>2026 (Safra Atual)</strong></span>
-          <button type="button" onclick="filterVaultYear('todos')">Exibir todos os 150 informativos</button>
+          <span id="vault-active-filter-text">Exibindo informativos de: <strong>Todos os anos cadastrados</strong></span>
+          <button type="button" onclick="filterVaultYear('todos')">Exibir todos os documentos cadastrados</button>
         </div>
 
         <div class="toolbar-scientific">
@@ -651,7 +623,7 @@
           <div class="about-label">ESTADO ATUAL</div>
           <h2>Sempre pronto. Sempre incompleto.</h2>
           <p>O EVIDA funciona como observatório rigoroso de relatórios institucionais. Preserva o original como cold custody no cofre, extrai afirmações página a página com proveniência e disponibiliza prova documental auditável sob demanda.</p>
-          
+
           <div class="notice" style="margin-top:20px;">
             <strong>Regra Metodológica Fundamental SisTer:</strong>
             <p>Uma menção em relatório oficial é evidência de <em>reporte documental</em>, e <strong>não</strong> comprovação empírica automática de que o fenômeno físico ocorreu exatamente daquela maneira. O EVIDA registra quem disse, quando, em que página e em qual contexto.</p>

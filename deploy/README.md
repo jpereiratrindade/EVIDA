@@ -1,63 +1,50 @@
-# EVIDA — Guia de Implantação e Agendamento no `labeco-srv`
+# Implantação no labeco-srv
 
-Este diretório contém os artefatos de serviço do systemd e instruções para colocar o EVIDA em produção contínua no servidor do laboratório (`labeco-srv`), co-localizado com serviços existentes (como MORFO).
-
----
-
-## 1. Viabilidade no `labeco-srv`
-
-O EVIDA é implementado em C++26 nativo (Crow/Asio) com SQLite em modo WAL:
-- **Consumo de memória em repouso:** ~25 MB a 30 MB RSS.
-- **CPU em repouso:** 0.0%.
-- **Sincronização semanal de novos PDFs:** ~1 a 2 segundos de CPU a cada quinta-feira.
-- **Isolamento de recursos:** Configurado no `evida.service` com `MemoryHigh=256M`, `MemoryMax=512M` e `CPUQuota=50%`.
-- **Impacto no MORFO e outros serviços:** Nulo. Não interfere em portas nem aloca recursos de GPU ou memória excessiva.
-
----
-
-## 2. Instalação como Serviço Systemd
-
-Para instalar os serviços no `labeco-srv`:
+Compile na estação de desenvolvimento; o servidor recebe o pacote pronto.
 
 ```bash
-# 1. Copiar as unidades para o diretório de serviços do systemd
-sudo cp deploy/evida.service /etc/systemd/system/
-sudo cp deploy/evida-sync.service /etc/systemd/system/
-sudo cp deploy/evida-sync.timer /etc/systemd/system/
-
-# 2. Recarregar a configuração do systemd
-sudo systemctl daemon-reload
-
-# 3. Habilitar e iniciar o daemon principal
-sudo systemctl enable --now evida.service
-
-# 4. Habilitar e iniciar o timer de sincronização semanal
-sudo systemctl enable --now evida-sync.timer
-
-# 5. Conferir status
-sudo systemctl status evida.service
-sudo systemctl list-timers evida-sync.timer
+ops/build-release.sh dist 0.3.3-coleta --worktree
+scp dist/evida-0.3.3-coleta.tar.gz dist/evida-0.3.3-coleta.tar.gz.sha256 ops/install-release.sh jpereiratrindade@10.163.80.129:~/
+ssh -t jpereiratrindade@10.163.80.129 "sudo ./install-release.sh ./evida-0.3.3-coleta.tar.gz"
 ```
 
----
+Use identificador novo para cada pacote. `--worktree` inclui os fontes atuais,
+inclusive novos arquivos nas pastas do projeto, sem exigir commit. Sem essa opção,
+o empacotamento exige alterações rastreadas commitadas e usa `git archive HEAD`.
+A compilação e os testes ocorrem no toolbox fedora-44-sister quando disponível.
 
-## 3. Alternativa via Crontab do Usuário
+O instalador preserva `/var/lib/evida/var/evida.sqlite`, cria backup com a API online
+do SQLite, aplica migrações ao iniciar o servidor, reprocessa o acervo com a versão
+nova do extrator, audita vínculos e instala a coleta diária. O banco do pacote só é
+usado quando não existe banco de produção. O rollback automático do executável
+não restaura o banco; backups ficam ao lado do banco para recuperação deliberada.
 
-Caso prefira não usar systemd timers, adicione à crontab (`crontab -e`):
-
-```cron
-# EVIDA: Sincronização semanal com Emater/RS às quintas-feiras às 18:30
-30 18 * * 4 cd /run/media/jpereiratrindade/labeco10T/dev/cpp/evida && /usr/bin/python3 tools/sync_emater_repository.py --cron >> var/sync.log 2>&1
+```bash
+systemctl status evida.service evida-sync.timer
+systemctl list-timers evida-sync.timer
+journalctl -u evida-sync.service
 ```
 
----
+O timer executa às 18h30 America/Sao_Paulo, com até 5 minutos adicionais. Esse é um
+horário operacional de consulta, sem pressupor horário de publicação da Emater.
+O serviço consulta novamente no dia seguinte se houver falhas ou publicação tardia.
+O ano corrente é calculado na execução. Para coletar anos anteriores:
 
-## 4. Endpoints Disponíveis na Rede Local
+```bash
+sudo python3 /usr/local/share/evida/current/tools/sync_emater_repository.py --year 2025 --db /var/lib/evida/var/evida.sqlite --storage /var/lib/evida/storage/documents
+```
 
-Com o servidor rodando em `0.0.0.0:18142`:
-- **Interface Web:** `http://<ip-do-labeco-srv>:18142/`
-- **Healthcheck:** `GET http://<ip-do-labeco-srv>:18142/api/health`
-- **Estatísticas do Corpus:** `GET http://<ip-do-labeco-srv>:18142/api/v1/stats`
-- **Cofre Documental e Custódia:** `GET http://<ip-do-labeco-srv>:18142/api/v1/vault/documents`
-- **Consulta de Evidências:** `GET http://<ip-do-labeco-srv>:18142/api/v1/evidences`
-- **Consulta de Prova por Id:** `GET http://<ip-do-labeco-srv>:18142/api/v1/provenance/evidence/<id>`
+Para reprocessar sem download, inclusive documentos com zero resultados:
+
+```bash
+sudo python3 /usr/local/share/evida/current/tools/extract_corpus_scientific.py --db /var/lib/evida/var/evida.sqlite --year 2025 --reprocess
+```
+
+Registros substituídos e decisões humanas permanecem no banco. Contagens ativas
+podem diminuir: o extrator conservador não reproduz todas as variáveis do legado.
+O histórico de coleta começa nesta versão; não é fabricado para cargas antigas.
+A interface oferece instruções de importação, sem iniciar tarefas administrativas.
+
+Páginas legadas sem checksum recebem hash calculado do texto já armazenado, com
+registro explícito em `page_checksum_history`. Isso não equivale a revalidar a
+extração contra o PDF. Checksums existentes divergentes causam falha da auditoria.

@@ -54,6 +54,19 @@ std::string get_page_text_for_sha(sqlite3* db, const std::string& sha256, int pa
     sqlite3_finalize(stmt);
   }
 
+  // Contexto de versões anteriores, preservado antes de substituir páginas atuais.
+  const char* history_sql = "SELECT json_extract(p.value,'$.text_content') FROM document_revision r,json_each(r.snapshot_json,'$.document_page_provenance') p WHERE r.sha256=? AND json_extract(p.value,'$.page_number')=? LIMIT 1";
+  if (sqlite3_prepare_v2(db,history_sql,-1,&stmt,nullptr)==SQLITE_OK) {
+    sqlite3_bind_text(stmt,1,sha256.c_str(),-1,SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt,2,page);
+    if (sqlite3_step(stmt)==SQLITE_ROW) {
+      std::string text=col_text(stmt,0);
+      sqlite3_finalize(stmt);
+      return text;
+    }
+  }
+  sqlite3_finalize(stmt);
+
   // 2. Fallback para tabela legada
   const char* sql = "SELECT dp.text_content FROM document_page dp "
                     "JOIN source_document sd ON dp.source_document_id = sd.id "
@@ -151,7 +164,7 @@ std::vector<EventItem> list_events(sqlite3* db, const std::string& classe,
   std::string sql = "SELECT evento_id, documento_id, arquivo_origem, numero_informativo, "
                     "data_publicacao, regiao_emater, municipio, atividade, tipo_evento, "
                     "classe_evento, descricao_evento, efeito_produtivo, efeito_economico, "
-                    "pagina, secao, evidencia_textual, confianca FROM eventos WHERE 1=1 ";
+                    "pagina, secao, evidencia_textual, confianca FROM eventos WHERE NOT EXISTS (SELECT 1 FROM record_status WHERE record_type='evento' AND record_id=evento_id AND status='superseded') ";
 
   if (!classe.empty()) sql += " AND classe_evento = ? ";
   if (!regiao.empty()) sql += " AND regiao_emater = ? ";
@@ -209,7 +222,7 @@ std::vector<ObservationItem> list_observations(sqlite3* db, const std::string& a
   std::string sql = "SELECT observacao_id, documento_id, arquivo_origem, numero_informativo, "
                     "data_publicacao, dimensao, categoria, atividade, cultura_criacao, "
                     "variavel, valor, unidade, regiao_emater, municipio, "
-                    "pagina, secao, evidencia_textual, confianca FROM observacoes WHERE 1=1 ";
+                    "pagina, secao, evidencia_textual, confianca FROM observacoes WHERE NOT EXISTS (SELECT 1 FROM record_status WHERE record_type='observacao' AND record_id=observacao_id AND status='superseded') ";
 
   if (!atividade.empty()) sql += " AND atividade = ? ";
   if (!variavel.empty()) sql += " AND variavel = ? ";
@@ -505,6 +518,24 @@ std::optional<AuditProofItem> get_audit_proof(sqlite3* db, const std::string& en
       proof.executed_at = col_text(stmt, 16);
     }
     sqlite3_finalize(stmt);
+  }
+
+  if (found_unified) {
+    sqlite3_stmt* meta=nullptr;
+    const char* query = "SELECT COALESCE((SELECT status FROM record_status WHERE record_type=?1 AND record_id=?2),'active'), COALESCE((SELECT status FROM review_decision WHERE record_type=?1 AND record_id=?2 ORDER BY decided_at DESC,rowid DESC LIMIT 1),'extracted'), COALESCE((SELECT source_sha256 FROM scientific_processing WHERE run_id=?3),(SELECT r.sha256 FROM document_revision r,json_each(r.snapshot_json,'$.extraction_run') j WHERE r.document_id=?4 AND json_extract(j.value,'$.run_id')=?3 LIMIT 1),?5)";
+    if (sqlite3_prepare_v2(db,query,-1,&meta,nullptr)==SQLITE_OK) {
+      sqlite3_bind_text(meta,1,proof.entity_type.c_str(),-1,SQLITE_TRANSIENT);
+      sqlite3_bind_text(meta,2,proof.entity_id.c_str(),-1,SQLITE_TRANSIENT);
+      sqlite3_bind_text(meta,3,proof.extraction_run_id.c_str(),-1,SQLITE_TRANSIENT);
+      sqlite3_bind_text(meta,4,proof.documento_id.c_str(),-1,SQLITE_TRANSIENT);
+      sqlite3_bind_text(meta,5,proof.sha256.c_str(),-1,SQLITE_TRANSIENT);
+      if (sqlite3_step(meta)==SQLITE_ROW) {
+        proof.record_status=col_text(meta,0);
+        proof.review_status=col_text(meta,1);
+        proof.sha256=col_text(meta,2);
+      }
+    }
+    sqlite3_finalize(meta);
   }
 
   // Se localizado na camada unificada, busca todos os vínculos de evidência associados ao registro

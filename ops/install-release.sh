@@ -54,18 +54,28 @@ cleanup() { rm -rf -- "$STAGING"; }
 trap cleanup EXIT
 
 install -d -m 0755 "$BASE/releases" /var/lib/evida/storage/documents /var/lib/evida/var
-rm -rf "$TARGET"
+[[ ! -e "$TARGET" ]] || { echo "Release já existe; use um identificador novo." >&2; exit 1; }
 install -d -m 0755 "$STAGING"
 tar -xzf "$ARCHIVE" -C "$STAGING"
 
 test -x "$STAGING/build/evida-server"
 test -f "$STAGING/web/index.html"
 
-# Atualiza ou instala a base de dados do corpus e cofre de documentos
-if [[ -f "$STAGING/var/evida.sqlite" ]]; then
-  if [[ -f /var/lib/evida/var/evida.sqlite ]]; then
-    cp /var/lib/evida/var/evida.sqlite "/var/lib/evida/var/evida.sqlite.bak-$$" 2>/dev/null || true
-  fi
+# Interrompe coletas antes do backup e das migrações.
+systemctl stop evida-sync.timer evida-sync.service 2>/dev/null || true
+
+# Banco existente é persistente. Backup online consistente antes das migrações.
+if [[ -f /var/lib/evida/var/evida.sqlite ]]; then
+  python3 - /var/lib/evida/var/evida.sqlite <<'PYBACKUP'
+import sqlite3, sys, datetime
+source = sqlite3.connect(sys.argv[1])
+target = sqlite3.connect(sys.argv[1] + '.backup-' + datetime.datetime.now().strftime('%Y%m%dT%H%M%S%f'))
+with target:
+    source.backup(target)
+target.close()
+source.close()
+PYBACKUP
+elif [[ -f "$STAGING/var/evida.sqlite" ]]; then
   cp "$STAGING/var/evida.sqlite" /var/lib/evida/var/evida.sqlite
 fi
 if [[ -d "$STAGING/storage/documents" ]]; then
@@ -105,6 +115,8 @@ CPUQuota=50%
 WantedBy=multi-user.target
 EOF
 
+install -m 0644 "$TARGET/deploy/evida-sync.service" /etc/systemd/system/evida-sync.service
+install -m 0644 "$TARGET/deploy/evida-sync.timer" /etc/systemd/system/evida-sync.timer
 systemctl daemon-reload
 systemctl enable --now evida.service
 systemctl restart evida.service
@@ -135,6 +147,13 @@ if [[ "$HEALTHY" -ne 1 ]]; then
   fi
   exit 1
 fi
+
+# Reprocessamento versionado preserva registros anteriores e revisões humanas.
+python3 "$TARGET/tools/extract_corpus_scientific.py" --db /var/lib/evida/var/evida.sqlite
+python3 "$TARGET/tools/verify_corpus_consistency.py" --db /var/lib/evida/var/evida.sqlite --storage /var/lib/evida/storage/documents
+systemctl restart evida.service
+/usr/bin/curl --noproxy "*" --fail --silent --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:18142/api/health
+systemctl enable --now evida-sync.timer
 
 echo "=========================================================="
 echo " EVIDA ($RELEASE_ID) instalado com sucesso e em operação!"
