@@ -106,6 +106,13 @@ systemctl daemon-reload
 systemctl enable --now evida.service
 systemctl restart evida.service
 
+# Liberação de porta no firewall para rede local
+if command -v firewall-cmd >/dev/null 2>&1; then
+  firewall-cmd --permanent --add-port=18142/tcp 2>/dev/null || true
+  firewall-cmd --permanent --zone=FedoraServer --add-port=18142/tcp 2>/dev/null || true
+  firewall-cmd --reload 2>/dev/null || true
+fi
+
 # Health check
 HEALTHY=0
 for _ in {1..30}; do
