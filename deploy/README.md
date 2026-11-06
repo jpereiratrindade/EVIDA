@@ -56,7 +56,8 @@ Caso prefira não usar systemd timers, adicione à crontab (`crontab -e`):
 
 Com o servidor rodando em `0.0.0.0:18142`:
 - **Interface Web:** `http://<ip-do-labeco-srv>:18142/`
-- **Painel de Auditoria Documental:** `http://<ip-do-labeco-srv>:18142/audit`
 - **Healthcheck:** `GET http://<ip-do-labeco-srv>:18142/api/health`
-- **Conferência de Custódia:** `GET http://<ip-do-labeco-srv>:18142/api/custody/verify`
-- **Consulta de Provas:** `GET http://<ip-do-labeco-srv>:18142/api/provenance/evidence/<id>`
+- **Estatísticas do Corpus:** `GET http://<ip-do-labeco-srv>:18142/api/v1/stats`
+- **Cofre Documental e Custódia:** `GET http://<ip-do-labeco-srv>:18142/api/v1/vault/documents`
+- **Consulta de Evidências:** `GET http://<ip-do-labeco-srv>:18142/api/v1/evidences`
+- **Consulta de Prova por Id:** `GET http://<ip-do-labeco-srv>:18142/api/v1/provenance/evidence/<id>`
