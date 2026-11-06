@@ -129,11 +129,155 @@ function hideAuthOverlay() {
   $('auth-overlay').classList.add('hidden');
 }
 
+// ----------------- SELETOR MULTI-ANO E SÍNTESE TEMÁTICA -----------------
+let currentYear = '2026';
+let activeObsTheme = null;
+let activeEventsClass = null;
+
+async function loadYearsList() {
+  const sel = $('global-year-select');
+  if (!sel) return;
+  try {
+    const res = await api('/api/v1/years');
+    const active = res.active_years || [];
+    let html = '';
+    for (const y of active) {
+      const isSel = String(y.ano) === String(currentYear) ? 'selected' : '';
+      html += `<option value="${y.ano}" ${isSel}>${y.ano} (${y.documentos} informativos)</option>`;
+    }
+    html += `<option value="todos" ${currentYear === '' ? 'selected' : ''}>Todos os Anos</option>`;
+    html += `<option value="import_emater">+ Ingerir 2024 / 2025 da Emater...</option>`;
+    sel.innerHTML = html;
+  } catch (err) {
+    console.warn('Falha ao listar anos:', err);
+  }
+}
+
+function onYearChange() {
+  const sel = $('global-year-select');
+  if (!sel) return;
+  const val = sel.value;
+  if (val === 'import_emater') {
+    promptImportYear();
+    sel.value = currentYear || 'todos';
+    return;
+  }
+  currentYear = val === 'todos' ? '' : val;
+  const stateEl = $('service-state');
+  if (stateEl) {
+    stateEl.textContent = currentYear ? `Corpus ${currentYear} Ativo` : 'Corpus Multi-ano Ativo';
+  }
+  loadStats();
+  const activeView = location.hash.replace('#', '') || 'visao';
+  if (activeView === 'eventos') loadEvents();
+  if (activeView === 'observacoes') loadObservations();
+  if (activeView === 'custodia') loadVaultDocuments();
+}
+
+function promptImportYear() {
+  const yr = prompt('Digite o ano que deseja sincronizar da Emater/RS (ex: 2024 ou 2025):', '2024');
+  if (!yr) return;
+  const yearInt = parseInt(yr.trim(), 10);
+  if (isNaN(yearInt) || yearInt < 2015 || yearInt > 2026) {
+    alert('Por favor informe um ano válido entre 2015 e 2026.');
+    return;
+  }
+  toast(`Iniciando checagem de acervo da Emater para ${yearInt}…`);
+  alert(`Para ingestão em lote do acervo histórico de ${yearInt} mantendo a custódia epistêmica estrita:\n\nExecute no terminal:\npython3 tools/sync_emater_repository.py --year ${yearInt} --extract\n\nIsso baixará as edições oficiais de ${yearInt}, calculará os hashes de custódia e indexará todas as evidências com vínculo criptográfico.`);
+}
+
+function filterEventsClass(cls) {
+  activeEventsClass = cls;
+  const select = $('events-class-filter');
+  if (select) select.value = cls;
+  
+  document.querySelectorAll('#events-synthesis-cards .synthesis-card').forEach(card => {
+    card.classList.toggle('active', card.getAttribute('onclick')?.includes(cls));
+  });
+
+  const bar = $('events-active-filter-bar');
+  const text = $('events-active-filter-text');
+  if (bar && text) {
+    bar.classList.remove('hidden');
+    const labelMap = {
+      estiagem: '☀️ Seca & Estiagem',
+      excesso_hidrico: '🌊 Chuvas & Enchentes',
+      praga: '🐛 Pragas Fitossanitárias',
+      doenca: '🍂 Fitopatologias',
+      geada: '❄️ Geada & Granizo'
+    };
+    text.innerHTML = `Exibindo recorte temático: <strong>${labelMap[cls] || cls}</strong>`;
+  }
+  loadEvents();
+}
+
+function clearEventsFilter() {
+  activeEventsClass = null;
+  const select = $('events-class-filter');
+  if (select) select.value = '';
+  document.querySelectorAll('#events-synthesis-cards .synthesis-card').forEach(card => card.classList.remove('active'));
+  const bar = $('events-active-filter-bar');
+  if (bar) bar.classList.add('hidden');
+  loadEvents();
+}
+
+function filterObsTheme(theme) {
+  activeObsTheme = theme;
+  const varFilter = $('obs-variable-filter');
+  const actFilter = $('obs-activity-filter');
+  
+  document.querySelectorAll('#obs-synthesis-cards .synthesis-card').forEach(card => {
+    card.classList.toggle('active', card.getAttribute('onclick')?.includes(theme));
+  });
+
+  const bar = $('obs-active-filter-bar');
+  const text = $('obs-active-filter-text');
+  if (bar && text) {
+    bar.classList.remove('hidden');
+    const labelMap = {
+      clima: '🌧️ Clima & Chuvas (Precipitação em mm)',
+      culturas: '🌾 Culturas & Safras (Trigo, Soja, Milho)',
+      produtividade: '⚖️ Produtividade de Campo (kg/ha)',
+      precos: '💰 Cotações Médias & Mercado Agropecuário'
+    };
+    text.innerHTML = `Exibindo recorte temático: <strong>${labelMap[theme] || theme}</strong>`;
+  }
+
+  if (theme === 'clima') {
+    if (varFilter) varFilter.value = 'precipitação';
+    if (actFilter) actFilter.value = '';
+  } else if (theme === 'produtividade') {
+    if (varFilter) varFilter.value = 'produtividade';
+    if (actFilter) actFilter.value = '';
+  } else if (theme === 'precos') {
+    if (varFilter) varFilter.value = 'preço';
+    if (actFilter) actFilter.value = '';
+  } else if (theme === 'culturas') {
+    if (varFilter) varFilter.value = '';
+    if (actFilter) actFilter.value = 'trigo';
+  }
+  loadObservations();
+}
+
+function clearObsFilter() {
+  activeObsTheme = null;
+  const varFilter = $('obs-variable-filter');
+  const actFilter = $('obs-activity-filter');
+  if (varFilter) varFilter.value = '';
+  if (actFilter) actFilter.value = '';
+  document.querySelectorAll('#obs-synthesis-cards .synthesis-card').forEach(card => card.classList.remove('active'));
+  const bar = $('obs-active-filter-bar');
+  if (bar) bar.classList.add('hidden');
+  loadObservations();
+}
+
 // ----------------- CARREGAMENTO DE DADOS -----------------
 
 async function loadStats() {
   try {
-    const s = await api('/api/v1/stats');
+    let url = '/api/v1/stats';
+    if (currentYear) url += `?ano=${encodeURIComponent(currentYear)}`;
+    const s = await api(url);
     if ($('stat-events')) $('stat-events').textContent = number.format(s.events || 0);
     if ($('stat-observations')) $('stat-observations').textContent = number.format(s.observations || 0);
     if ($('stat-municipalities')) $('stat-municipalities').textContent = number.format(s.municipalities || 0);
@@ -155,6 +299,7 @@ async function loadEvents() {
   let url = `/api/v1/events?limit=150`;
   if (classe) url += `&classe=${encodeURIComponent(classe)}`;
   if (regiao) url += `&regiao=${encodeURIComponent(regiao)}`;
+  if (currentYear) url += `&ano=${encodeURIComponent(currentYear)}`;
 
   try {
     const res = await api(url);
@@ -223,6 +368,7 @@ async function loadObservations() {
   let url = `/api/v1/observations?limit=150`;
   if (variavel) url += `&variavel=${encodeURIComponent(variavel)}`;
   if (atividade) url += `&atividade=${encodeURIComponent(atividade)}`;
+  if (currentYear) url += `&ano=${encodeURIComponent(currentYear)}`;
 
   try {
     const res = await api(url);
@@ -759,8 +905,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Valida autenticação inicial
   checkAuth();
+
+  // Carrega anos disponíveis no corpus
+  loadYearsList();
 });
 
 // Exporta para chamadas inline
 window.openAuditProof = openAuditProof;
 window.selectMunicipality = selectMunicipality;
+window.onYearChange = onYearChange;
+window.filterEventsClass = filterEventsClass;
+window.clearEventsFilter = clearEventsFilter;
+window.filterObsTheme = filterObsTheme;
+window.clearObsFilter = clearObsFilter;

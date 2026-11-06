@@ -141,7 +141,8 @@ BlobIntegrity verify_blob_integrity(sqlite3* db, const std::string& sha256) {
 std::vector<EventItem> list_events(sqlite3* db, const std::string& classe,
                                    const std::string& regiao,
                                    const std::string& atividade,
-                                   int limit, int offset) {
+                                   int limit, int offset,
+                                   int ano) {
   std::vector<EventItem> out;
   if (limit <= 0) limit = 50;
   if (limit > 200) limit = 200;
@@ -155,6 +156,8 @@ std::vector<EventItem> list_events(sqlite3* db, const std::string& classe,
   if (!classe.empty()) sql += " AND classe_evento = ? ";
   if (!regiao.empty()) sql += " AND regiao_emater = ? ";
   if (!atividade.empty()) sql += " AND atividade = ? ";
+  std::string ano_str = std::to_string(ano);
+  if (ano > 0) sql += " AND substr(data_publicacao, 1, 4) = ? ";
   sql += " ORDER BY data_publicacao DESC, evento_id ASC LIMIT ? OFFSET ?;";
 
   sqlite3_stmt* stmt = nullptr;
@@ -164,6 +167,7 @@ std::vector<EventItem> list_events(sqlite3* db, const std::string& classe,
   if (!classe.empty()) sqlite3_bind_text(stmt, bidx++, classe.c_str(), -1, SQLITE_STATIC);
   if (!regiao.empty()) sqlite3_bind_text(stmt, bidx++, regiao.c_str(), -1, SQLITE_STATIC);
   if (!atividade.empty()) sqlite3_bind_text(stmt, bidx++, atividade.c_str(), -1, SQLITE_STATIC);
+  if (ano > 0) sqlite3_bind_text(stmt, bidx++, ano_str.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, bidx++, limit);
   sqlite3_bind_int(stmt, bidx++, offset);
 
@@ -195,7 +199,8 @@ std::vector<EventItem> list_events(sqlite3* db, const std::string& classe,
 std::vector<ObservationItem> list_observations(sqlite3* db, const std::string& atividade,
                                                const std::string& variavel,
                                                const std::string& regiao,
-                                               int limit, int offset) {
+                                               int limit, int offset,
+                                               int ano) {
   std::vector<ObservationItem> out;
   if (limit <= 0) limit = 50;
   if (limit > 200) limit = 200;
@@ -209,6 +214,8 @@ std::vector<ObservationItem> list_observations(sqlite3* db, const std::string& a
   if (!atividade.empty()) sql += " AND atividade = ? ";
   if (!variavel.empty()) sql += " AND variavel = ? ";
   if (!regiao.empty()) sql += " AND regiao_emater = ? ";
+  std::string ano_str = std::to_string(ano);
+  if (ano > 0) sql += " AND substr(data_publicacao, 1, 4) = ? ";
   sql += " ORDER BY data_publicacao DESC, observacao_id ASC LIMIT ? OFFSET ?;";
 
   sqlite3_stmt* stmt = nullptr;
@@ -218,6 +225,7 @@ std::vector<ObservationItem> list_observations(sqlite3* db, const std::string& a
   if (!atividade.empty()) sqlite3_bind_text(stmt, bidx++, atividade.c_str(), -1, SQLITE_STATIC);
   if (!variavel.empty()) sqlite3_bind_text(stmt, bidx++, variavel.c_str(), -1, SQLITE_STATIC);
   if (!regiao.empty()) sqlite3_bind_text(stmt, bidx++, regiao.c_str(), -1, SQLITE_STATIC);
+  if (ano > 0) sqlite3_bind_text(stmt, bidx++, ano_str.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, bidx++, limit);
   sqlite3_bind_int(stmt, bidx++, offset);
 

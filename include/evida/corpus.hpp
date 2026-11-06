@@ -172,12 +172,14 @@ struct AuditProofItem {
 std::vector<EventItem> list_events(sqlite3* db, const std::string& classe = "",
                                    const std::string& regiao = "",
                                    const std::string& atividade = "",
-                                   int limit = 50, int offset = 0);
+                                   int limit = 50, int offset = 0,
+                                   int ano = 0);
 
 std::vector<ObservationItem> list_observations(sqlite3* db, const std::string& atividade = "",
                                                const std::string& variavel = "",
                                                const std::string& regiao = "",
-                                               int limit = 50, int offset = 0);
+                                               int limit = 50, int offset = 0,
+                                               int ano = 0);
 
 std::vector<MunicipalityItem> list_municipalities(sqlite3* db, const std::string& query = "",
                                                    int limit = 100);

@@ -28,6 +28,8 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 BASE_URL = "https://www.emater.tche.br/site/info-agro/informativo_conjuntural.php"
 USER_AGENT = "EVIDA-Scientific-Custody/0.3.2 (LABECO; +https://github.com/jpereiratrindade/EVIDA)"
 

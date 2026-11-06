@@ -75,6 +75,16 @@
         <strong id="page-name">Visão geral</strong>
       </div>
 
+      <!-- SELETOR DE ANO TEMPORAL MULTI-ANO -->
+      <div class="year-selector-wrap">
+        <label for="global-year-select" class="year-label">Ano:</label>
+        <select id="global-year-select" class="select-year" onchange="onYearChange()">
+          <option value="2026" selected>2026 (44 informativos)</option>
+          <option value="todos">Todos os Anos</option>
+          <option value="import_emater">+ Ingerir 2024 / 2025 da Emater...</option>
+        </select>
+      </div>
+
       <!-- USER CHIP PADRÃO MORFO -->
       <div class="user-chip" id="user-chip">
         <span class="user-avatar" id="user-avatar" aria-hidden="true">PS</span>
@@ -198,9 +208,58 @@
           <div>
             <span class="section-kicker">FENÔMENOS, PERTURBAÇÕES &amp; DANOS</span>
             <h1 id="eventos-title">Eventos Climáticos e Sanitários Documentados</h1>
-            <p>Registro histórico de eventos relatados pela Emater/RS ao longo de 2026, com classe de evento, atividade agrícola afetada e proveniência estrita.</p>
+            <p>Registro histórico de eventos relatados pela Emater/RS, com classe de evento, atividade agrícola afetada e proveniência estrita.</p>
           </div>
           <button class="button outline" id="btn-refresh-events" type="button">↻ Atualizar</button>
+        </div>
+
+        <!-- SÍNTESE TEMÁTICA: EVENTOS & DANOS -->
+        <div class="synthesis-panel" id="events-synthesis-cards">
+          <article class="synthesis-card clickable" onclick="filterEventsClass('estiagem')">
+            <div class="synthesis-icon">☀️</div>
+            <div class="synthesis-info">
+              <h3>Seca &amp; Estiagem</h3>
+              <p>Déficits hídricos e estiagem</p>
+              <span class="synthesis-action">Filtrar eventos →</span>
+            </div>
+          </article>
+          <article class="synthesis-card clickable" onclick="filterEventsClass('excesso_hidrico')">
+            <div class="synthesis-icon">🌊</div>
+            <div class="synthesis-info">
+              <h3>Chuvas &amp; Enchentes</h3>
+              <p>Inundações, encharcamento e enchentes</p>
+              <span class="synthesis-action">Filtrar eventos →</span>
+            </div>
+          </article>
+          <article class="synthesis-card clickable" onclick="filterEventsClass('praga')">
+            <div class="synthesis-icon">🐛</div>
+            <div class="synthesis-info">
+              <h3>Pragas Fitossanitárias</h3>
+              <p>Cigarrinha, lagartas, percevejos e pulgões</p>
+              <span class="synthesis-action">Filtrar eventos →</span>
+            </div>
+          </article>
+          <article class="synthesis-card clickable" onclick="filterEventsClass('doenca')">
+            <div class="synthesis-icon">🍂</div>
+            <div class="synthesis-info">
+              <h3>Fitopatologias</h3>
+              <p>Ferrugem, manchas foliares e podridões</p>
+              <span class="synthesis-action">Filtrar eventos →</span>
+            </div>
+          </article>
+          <article class="synthesis-card clickable" onclick="filterEventsClass('geada')">
+            <div class="synthesis-icon">❄️</div>
+            <div class="synthesis-info">
+              <h3>Geada &amp; Granizo</h3>
+              <p>Danos térmicos e perdas por granizo</p>
+              <span class="synthesis-action">Filtrar eventos →</span>
+            </div>
+          </article>
+        </div>
+
+        <div id="events-active-filter-bar" class="active-filter-bar hidden">
+          <span id="events-active-filter-text">Exibindo recorte temático</span>
+          <button type="button" onclick="clearEventsFilter()">✕ Limpar filtro e ver todos</button>
         </div>
 
         <div class="toolbar-scientific">
@@ -272,6 +331,47 @@
           <button class="button outline" id="btn-refresh-obs" type="button">↻ Atualizar</button>
         </div>
 
+        <!-- SÍNTESE TEMÁTICA: OBSERVAÇÕES -->
+        <div class="synthesis-panel" id="obs-synthesis-cards">
+          <article class="synthesis-card clickable" onclick="filterObsTheme('clima')">
+            <div class="synthesis-icon">🌧️</div>
+            <div class="synthesis-info">
+              <h3>Clima &amp; Chuvas</h3>
+              <p>Volumes acumulados e medições em mm</p>
+              <span class="synthesis-action">Explorar medições →</span>
+            </div>
+          </article>
+          <article class="synthesis-card clickable" onclick="filterObsTheme('culturas')">
+            <div class="synthesis-icon">🌾</div>
+            <div class="synthesis-info">
+              <h3>Culturas &amp; Safras</h3>
+              <p>Trigo, Soja, Milho, Arroz (fases em %)</p>
+              <span class="synthesis-action">Ver fases fenológicas →</span>
+            </div>
+          </article>
+          <article class="synthesis-card clickable" onclick="filterObsTheme('produtividade')">
+            <div class="synthesis-icon">⚖️</div>
+            <div class="synthesis-info">
+              <h3>Produtividade de Campo</h3>
+              <p>Rendimento físico (kg/ha, sc/ha)</p>
+              <span class="synthesis-action">Ver rendimentos →</span>
+            </div>
+          </article>
+          <article class="synthesis-card clickable" onclick="filterObsTheme('precos')">
+            <div class="synthesis-icon">💰</div>
+            <div class="synthesis-info">
+              <h3>Cotações &amp; Mercado</h3>
+              <p>Preços médios pagos ao produtor</p>
+              <span class="synthesis-action">Ver cotações →</span>
+            </div>
+          </article>
+        </div>
+
+        <div id="obs-active-filter-bar" class="active-filter-bar hidden">
+          <span id="obs-active-filter-text">Exibindo recorte temático</span>
+          <button type="button" onclick="clearObsFilter()">✕ Limpar recorte e ver todos</button>
+        </div>
+
         <div class="toolbar-scientific">
           <label class="searchwrap">
             <span aria-hidden="true">⌕</span>
@@ -280,14 +380,14 @@
           <label class="filterlabel">Variável
             <select id="obs-variable-filter" class="select-strategy">
               <option value="">Todas as variáveis</option>
-              <option value="precipitação">Precipitação</option>
-              <option value="colheita">Colheita (%)</option>
-              <option value="semeadura">Semeadura (%)</option>
-              <option value="produtividade">Produtividade</option>
-              <option value="desenvolvimento vegetativo">Desenv. Vegetativo</option>
-              <option value="floração">Floração</option>
-              <option value="enchimento de grãos">Enchimento de Grãos</option>
-              <option value="maturação">Maturação</option>
+              <option value="precipitação">Precipitação (mm)</option>
+              <option value="produtividade">Produtividade (kg/ha)</option>
+              <option value="preço">Preço e Cotações</option>
+              <option value="lavoura_colhida">Colheita (%)</option>
+              <option value="lavoura_semeada">Semeadura (%)</option>
+              <option value="lavoura_em_floração">Floração (%)</option>
+              <option value="lavoura_em_maturação">Maturação (%)</option>
+              <option value="área">Área Cultivada (ha)</option>
             </select>
           </label>
           <label class="filterlabel">Atividade

@@ -138,18 +138,43 @@ std::string_view media_type(std::string_view route) {
   return "text/html; charset=utf-8";
 }
 
-std::string stats_json(evida::Store& store) {
-  const auto stats = store.stats();
-  return "{\"documents\":" + std::to_string(stats.documents) +
-         ",\"evidences\":" + std::to_string(stats.evidences) +
-         ",\"users\":" + std::to_string(stats.users) +
-         ",\"events\":" + std::to_string(stats.events) +
-         ",\"observations\":" + std::to_string(stats.observations) +
-         ",\"responses\":" + std::to_string(stats.responses) +
-         ",\"prices\":" + std::to_string(stats.prices) +
-         ",\"episodes\":" + std::to_string(stats.episodes) +
-         ",\"municipalities\":" + std::to_string(stats.municipalities) +
-         ",\"municipal_occurrences\":" + std::to_string(stats.municipal_occurrences) + "}";
+std::string stats_json(evida::Store& store, int ano = 0) {
+  if (ano <= 0) {
+    const auto stats = store.stats();
+    return "{\"documents\":" + std::to_string(stats.documents) +
+           ",\"evidences\":" + std::to_string(stats.evidences) +
+           ",\"users\":" + std::to_string(stats.users) +
+           ",\"events\":" + std::to_string(stats.events) +
+           ",\"observations\":" + std::to_string(stats.observations) +
+           ",\"responses\":" + std::to_string(stats.responses) +
+           ",\"prices\":" + std::to_string(stats.prices) +
+           ",\"episodes\":" + std::to_string(stats.episodes) +
+           ",\"municipalities\":" + std::to_string(stats.municipalities) +
+           ",\"municipal_occurrences\":" + std::to_string(stats.municipal_occurrences) + "}";
+  }
+  auto count_filtered = [&](const char* table, const char* col) -> int64_t {
+    std::string q = "SELECT count(*) FROM " + std::string(table) + " WHERE substr(" + col + ", 1, 4) = '" + std::to_string(ano) + "';";
+    sqlite3_stmt* s = nullptr;
+    int64_t cnt = 0;
+    if (sqlite3_prepare_v2(store.db(), q.c_str(), -1, &s, nullptr) == SQLITE_OK) {
+      if (sqlite3_step(s) == SQLITE_ROW) cnt = sqlite3_column_int64(s, 0);
+      sqlite3_finalize(s);
+    }
+    return cnt;
+  };
+  int64_t docs = count_filtered("documentos", "data_publicacao");
+  int64_t evts = count_filtered("eventos", "data_publicacao");
+  int64_t obs = count_filtered("observacoes", "data_publicacao");
+  return "{\"documents\":" + std::to_string(docs) +
+         ",\"evidences\":" + std::to_string(store.stats().evidences) +
+         ",\"users\":" + std::to_string(store.stats().users) +
+         ",\"events\":" + std::to_string(evts) +
+         ",\"observations\":" + std::to_string(obs) +
+         ",\"responses\":" + std::to_string(store.stats().responses) +
+         ",\"prices\":" + std::to_string(store.stats().prices) +
+         ",\"episodes\":" + std::to_string(store.stats().episodes) +
+         ",\"municipalities\":" + std::to_string(store.stats().municipalities) +
+         ",\"municipal_occurrences\":" + std::to_string(store.stats().municipal_occurrences) + "}";
 }
 
 std::string extract_token(const http::request<http::string_body>& req) {
@@ -514,7 +539,32 @@ http::response<http::string_body> handle_request(const http::request<http::strin
   }
 
   if (req.method() == http::verb::get && path == "/api/v1/stats") {
-    return respond(http::status::ok, v, stats_json(store));
+    std::string ano_str = get_query_param(query, "ano");
+    int ano = 0;
+    if (!ano_str.empty()) try { ano = std::stoi(ano_str); } catch (...) {}
+    return respond(http::status::ok, v, stats_json(store, ano));
+  }
+
+  if (req.method() == http::verb::get && path == "/api/v1/years") {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT substr(data_publicacao, 1, 4) as yr, count(*) as docs FROM documentos WHERE data_publicacao IS NOT NULL GROUP BY yr ORDER BY yr DESC;";
+    std::ostringstream ss;
+    ss << "{\"active_years\":[";
+    bool first = true;
+    if (sqlite3_prepare_v2(store.db(), sql, -1, &stmt, nullptr) == SQLITE_OK) {
+      while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* y = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        int cnt = sqlite3_column_int(stmt, 1);
+        if (y && std::strlen(y) == 4) {
+          if (!first) ss << ",";
+          first = false;
+          ss << "{\"ano\":" << y << ",\"documentos\":" << cnt << "}";
+        }
+      }
+      sqlite3_finalize(stmt);
+    }
+    ss << "],\"available_remote\":[2026, 2025, 2024, 2023, 2022, 2021, 2020]}";
+    return respond(http::status::ok, v, ss.str());
   }
 
   // 3. Authentication Routes (Padrão MORFO)
@@ -752,6 +802,9 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     std::string regiao = get_query_param(query, "regiao");
     if (regiao.empty()) regiao = get_query_param(query, "regiao_emater");
     std::string atividade = get_query_param(query, "atividade");
+    int ano = 0;
+    std::string ano_str = get_query_param(query, "ano");
+    if (!ano_str.empty()) try { ano = std::stoi(ano_str); } catch (...) {}
     int limit = 50;
     std::string limit_str = get_query_param(query, "limit");
     if (!limit_str.empty()) try { limit = std::stoi(limit_str); } catch (...) {}
@@ -759,7 +812,7 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     std::string offset_str = get_query_param(query, "offset");
     if (!offset_str.empty()) try { offset = std::stoi(offset_str); } catch (...) {}
 
-    auto events = evida::corpus::list_events(store.db(), classe, regiao, atividade, limit, offset);
+    auto events = evida::corpus::list_events(store.db(), classe, regiao, atividade, limit, offset, ano);
     return respond(http::status::ok, v, events_to_json(events));
   }
 
@@ -769,6 +822,9 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     std::string variavel = get_query_param(query, "variavel");
     std::string regiao = get_query_param(query, "regiao");
     if (regiao.empty()) regiao = get_query_param(query, "regiao_emater");
+    int ano = 0;
+    std::string ano_str = get_query_param(query, "ano");
+    if (!ano_str.empty()) try { ano = std::stoi(ano_str); } catch (...) {}
     int limit = 50;
     std::string limit_str = get_query_param(query, "limit");
     if (!limit_str.empty()) try { limit = std::stoi(limit_str); } catch (...) {}
@@ -776,7 +832,7 @@ http::response<http::string_body> handle_request(const http::request<http::strin
     std::string offset_str = get_query_param(query, "offset");
     if (!offset_str.empty()) try { offset = std::stoi(offset_str); } catch (...) {}
 
-    auto obs = evida::corpus::list_observations(store.db(), atividade, variavel, regiao, limit, offset);
+    auto obs = evida::corpus::list_observations(store.db(), atividade, variavel, regiao, limit, offset, ano);
     return respond(http::status::ok, v, observations_to_json(obs));
   }
 
