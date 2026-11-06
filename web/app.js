@@ -566,42 +566,85 @@ async function loadEpisodes() {
 }
 
 // ----------------- COFRE & CUSTÓDIA CRIPTOGRÁFICA -----------------
+let vaultYear = '2026';
+let allVaultDocs = [];
+
+function filterVaultYear(yr) {
+  vaultYear = yr === 'todos' ? '' : yr;
+  
+  document.querySelectorAll('#vault-year-cards .synthesis-card').forEach(card => {
+    card.classList.toggle('active', card.getAttribute('onclick')?.includes(yr));
+  });
+
+  const bar = $('vault-active-filter-bar');
+  const text = $('vault-active-filter-text');
+  const title = $('vault-section-title');
+  if (text) {
+    if (!vaultYear) {
+      text.innerHTML = 'Exibindo acervo consolidado: <strong>Todos os 150 Informativos (2024–2026)</strong>';
+      if (title) title.textContent = 'Acervo Completo em Custódia (150 Informativos)';
+    } else {
+      text.innerHTML = `Exibindo acervo de: <strong>Safra ${vaultYear}</strong>`;
+      if (title) title.textContent = `Informativos de ${vaultYear} Preservados em Custódia`;
+    }
+  }
+  loadVaultDocuments();
+}
+
 async function loadVaultDocuments() {
   const tbody = $('vault-table-body');
   tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Carregando documentos do cofre…</td></tr>';
 
-  try {
-    const res = await api('/api/v1/vault/documents');
-    const docs = res.vault_documents || [];
-    if (docs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Nenhum documento sob custódia no cofre.</td></tr>';
-      return;
-    }
+  let url = '/api/v1/vault/documents';
+  if (vaultYear) url += `?ano=${encodeURIComponent(vaultYear)}`;
 
-    tbody.innerHTML = docs.map(d => {
-      const statusHtml = d.in_vault
-        ? '<span class="custody-tag">✓ Preservado no cofre</span>'
-        : '<span style="background:#fee2e2;color:#991b1b;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:800;">Ausente no cofre</span>';
-      return `
-        <tr>
-          <td class="nowrap"><strong style="color:var(--navy);font-size:0.78rem;">${h(d.documento_id)}</strong></td>
-          <td>
-            <strong>Informativo Conjuntural nº ${h(d.numero_informativo)}</strong><br>
-            <small style="color:var(--muted)">${h(d.arquivo)}</small>
-          </td>
-          <td class="nowrap">${h(d.data_publicacao)}</td>
-          <td class="nowrap"><strong>${d.numero_paginas}</strong> págs</td>
-          <td class="nowrap" style="font-size:0.78rem;color:var(--muted);">${number.format(d.caracteres_extraidos)}</td>
-          <td>
-            <code class="hash-code" style="max-width:280px;display:inline-block;" title="${h(d.sha256)}">${h(d.sha256)}</code>
-          </td>
-          <td class="nowrap">${statusHtml}</td>
-        </tr>
-      `;
-    }).join('');
+  try {
+    const res = await api(url);
+    allVaultDocs = res.vault_documents || [];
+    renderVaultDocuments();
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#c2410c">Erro ao carregar documentos do cofre: ${h(err.message)}</td></tr>`;
   }
+}
+
+function renderVaultDocuments() {
+  const tbody = $('vault-table-body');
+  const search = ($('vault-search')?.value || '').toLowerCase().trim();
+
+  const filtered = allVaultDocs.filter(d => {
+    if (!search) return true;
+    return String(d.numero_informativo || '').includes(search) ||
+           (d.arquivo || '').toLowerCase().includes(search) ||
+           (d.data_publicacao || '').includes(search) ||
+           (d.documento_id || '').toLowerCase().includes(search);
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Nenhum documento localizado para este filtro temporal.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(d => {
+    const statusHtml = d.in_vault
+      ? '<span class="custody-tag">✓ Preservado no cofre</span>'
+      : '<span style="background:#fee2e2;color:#991b1b;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:800;">Ausente no cofre</span>';
+    return `
+      <tr>
+        <td class="nowrap"><strong style="color:var(--navy);font-size:0.78rem;">${h(d.documento_id)}</strong></td>
+        <td>
+          <strong>Informativo Conjuntural nº ${h(d.numero_informativo)}</strong><br>
+          <small style="color:var(--muted)">${h(d.arquivo)}</small>
+        </td>
+        <td class="nowrap">${h(d.data_publicacao)}</td>
+        <td class="nowrap"><strong>${d.numero_paginas}</strong> págs</td>
+        <td class="nowrap" style="font-size:0.78rem;color:var(--muted);">${number.format(d.caracteres_extraidos)}</td>
+        <td>
+          <code class="hash-code" style="max-width:280px;display:inline-block;" title="${h(d.sha256)}">${h(d.sha256)}</code>
+        </td>
+        <td class="nowrap">${statusHtml}</td>
+      </tr>
+    `;
+  }).join('');
 }
 
 // ----------------- AUDIT DRAWER (PROVA DOCUMENTAL SOB DEMANDA) -----------------
@@ -864,6 +907,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Episódios & Cofre
   $('btn-refresh-episodes').onclick = () => loadEpisodes();
   $('btn-refresh-vault').onclick = () => loadVaultDocuments();
+  if ($('vault-search')) $('vault-search').oninput = () => renderVaultDocuments();
   if ($('btn-refresh-users')) $('btn-refresh-users').onclick = () => loadUsers();
 
   // Drawer de Auditoria
@@ -918,3 +962,4 @@ window.filterEventsClass = filterEventsClass;
 window.clearEventsFilter = clearEventsFilter;
 window.filterObsTheme = filterObsTheme;
 window.clearObsFilter = clearObsFilter;
+window.filterVaultYear = filterVaultYear;

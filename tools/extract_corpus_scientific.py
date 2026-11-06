@@ -35,6 +35,26 @@ PHENOLOGY_MAP = {
     "plantado": "semeadura",
 }
 
+def parse_phenology_table(table_text):
+    """Extrai rigorosamente linhas de tabelas de fases de safras da Emater,
+    garantindo que o percentual da safra atual seja vinculado à fase da MESMA linha."""
+    results = []
+    lines = table_text.strip().split("\n")
+    for line in lines:
+        line_clean = line.strip()
+        # Procura percentuais na linha
+        pcts = re.findall(r'(\d+[\.,]?\d*)\s*%', line_clean)
+        if not pcts:
+            continue
+        # Verifica se alguma fase fenológica está presente nesta linha específica
+        for key, mapped in PHENOLOGY_MAP.items():
+            if re.search(r'\b' + re.escape(key) + r'\b', line_clean, re.IGNORECASE):
+                # O primeiro percentual da linha é o valor da data da safra atual
+                val = pcts[0]
+                results.append((line_clean, mapped, val))
+                break
+    return results
+
 EVENT_CLASSES = {
     "seca": "seca", "estiagem": "seca", "déficit hídrico": "seca",
     "chuva excessiva": "chuva_excessiva", "chuvas excessivas": "chuva_excessiva",
@@ -160,6 +180,41 @@ def run_extraction(db_path: Path):
                     total_obs += 1
 
                 # 2. Busca observações de fenologia / percentuais (X %)
+                is_table = ("fases da cultura" in para.lower() or "safra atual" in para.lower() or "safra anterior" in para.lower())
+                if is_table:
+                    table_rows = parse_phenology_table(para)
+                    for line_raw, var_name, val in table_rows:
+                        obs_seq += 1
+                        obs_id = f"OBS-{obs_seq:06d}"
+                        span_id = f"span-{obs_id}"
+                        link_id = f"link-{obs_id}"
+                        text_sha = hashlib.sha256(line_raw.encode("utf-8")).hexdigest()
+
+                        cur.execute("""
+                            INSERT INTO observacoes (
+                                observacao_id, documento_id, arquivo_origem, numero_informativo,
+                                data_publicacao, periodo_referencia, dimensao, categoria, atividade,
+                                cultura_criacao, variavel, valor, unidade, regiao_emater, municipio,
+                                pagina, secao, evidencia_textual, confianca
+                            ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'extracao_tabular_heuristica', ?, ?, ?, ?, '%', '', ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
+                        """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, current_crop, current_crop, var_name, val, para_mun, page_num, section, line_raw))
+
+                        cur.execute("""
+                            INSERT OR REPLACE INTO evidence_span (
+                                evidence_id, extraction_run_id, document_id, page_number,
+                                verbatim_text, text_sha256, section_name, confidence
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MEDIA');
+                        """, (span_id, f"run-{doc_id}", doc_id, page_num, line_raw, text_sha, section))
+
+                        cur.execute("""
+                            INSERT OR REPLACE INTO record_evidence_link (
+                                link_id, record_type, record_id, evidence_id, link_type, notes
+                            ) VALUES (?, 'observacao', ?, ?, 'supports', 'Estádio fenológico extraído de tabela oficial da Emater');
+                        """, (link_id, obs_id, span_id))
+
+                        total_obs += 1
+                    continue
+
                 pct_matches = re.finditer(r'(\d+[\.,]?\d*)\s*%\s*(?:das\s*lavouras|da\s*área|das\s*áreas)?\s*(?:estão|foram|em|de)?\s*(floração|germinação|emergência|desenvolvimento|enchimento(?:\s*de\s*grãos)?|maturação|colhid[ao]s?|semead[ao]s?|plantad[ao]s?)', para_clean, re.IGNORECASE)
                 for m in pct_matches:
                     val = m.group(1)
@@ -182,20 +237,20 @@ def run_extraction(db_path: Path):
                             data_publicacao, periodo_referencia, dimensao, categoria, atividade,
                             cultura_criacao, variavel, valor, unidade, regiao_emater, municipio,
                             pagina, secao, evidencia_textual, confianca
-                        ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'quantitativa_explicita', ?, ?, ?, ?, '%', '', ?, ?, ?, ?, 'ALTA');
+                        ) VALUES (?, ?, ?, ?, ?, ?, 'P', 'extracao_narrativa_heuristica', ?, ?, ?, ?, '%', '', ?, ?, ?, ?, 'CANDIDATO_HEURISTICO');
                     """, (obs_id, doc_id, arq, num_inf, data_pub, data_pub, current_crop, current_crop, var_name, val, para_mun, page_num, section, para_clean))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO evidence_span (
                             evidence_id, extraction_run_id, document_id, page_number,
                             verbatim_text, text_sha256, section_name, confidence
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ALTA');
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MEDIA');
                     """, (span_id, f"run-{doc_id}", doc_id, page_num, para_clean, text_sha, section))
 
                     cur.execute("""
                         INSERT OR REPLACE INTO record_evidence_link (
                             link_id, record_type, record_id, evidence_id, link_type, notes
-                        ) VALUES (?, 'observacao', ?, ?, 'supports', 'Estádio fenológico / percentual de safra');
+                        ) VALUES (?, 'observacao', ?, ?, 'supports', 'Estádio fenológico / percentual de safra em texto narrativo');
                     """, (link_id, obs_id, span_id))
 
                     total_obs += 1

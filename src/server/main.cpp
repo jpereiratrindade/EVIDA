@@ -884,7 +884,10 @@ http::response<http::string_body> handle_request(const http::request<http::strin
 
   // 5.7 Vault Custody Documents
   if (req.method() == http::verb::get && path == "/api/v1/vault/documents") {
-    auto docs = evida::corpus::list_vault_documents(store.db());
+    std::string ano_str = get_query_param(query, "ano");
+    int ano = 0;
+    if (!ano_str.empty()) try { ano = std::stoi(ano_str); } catch (...) {}
+    auto docs = evida::corpus::list_vault_documents(store.db(), ano);
     return respond(http::status::ok, v, vault_documents_to_json(docs));
   }
 

@@ -195,7 +195,7 @@ std::vector<PriceItem> list_prices(sqlite3* db, const std::string& produto = "",
 
 std::vector<EpisodeItem> list_episodes(sqlite3* db, int limit = 50);
 
-std::vector<VaultDocumentItem> list_vault_documents(sqlite3* db);
+std::vector<VaultDocumentItem> list_vault_documents(sqlite3* db, int ano = 0);
 
 BlobIntegrity verify_blob_integrity(sqlite3* db, const std::string& sha256);
 

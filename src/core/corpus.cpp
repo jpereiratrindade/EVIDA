@@ -420,17 +420,25 @@ std::vector<EpisodeItem> list_episodes(sqlite3* db, int limit) {
   return out;
 }
 
-std::vector<VaultDocumentItem> list_vault_documents(sqlite3* db) {
+std::vector<VaultDocumentItem> list_vault_documents(sqlite3* db, int ano) {
   std::vector<VaultDocumentItem> out;
-  const char* sql = "SELECT d.documento_id, d.arquivo, d.numero_informativo, d.data_publicacao, "
+  std::string sql = "SELECT d.documento_id, d.arquivo, d.numero_informativo, d.data_publicacao, "
                     "d.ano, d.numero_paginas, d.caracteres_extraidos, d.sha256, d.sha256_texto_normalizado, "
                     "b.byte_size, b.status "
                     "FROM documentos d "
-                    "LEFT JOIN document_blob b ON d.sha256 = b.sha256 "
-                    "ORDER BY d.numero_informativo ASC;";
+                    "LEFT JOIN document_blob b ON d.sha256 = b.sha256 ";
+  if (ano > 0) {
+    sql += " WHERE d.ano = ? OR substr(d.data_publicacao, 1, 4) = ? ";
+  }
+  sql += " ORDER BY d.data_publicacao DESC, d.numero_informativo DESC;";
 
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return out;
+  if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return out;
+  if (ano > 0) {
+    std::string ano_str = std::to_string(ano);
+    sqlite3_bind_int(stmt, 1, ano);
+    sqlite3_bind_text(stmt, 2, ano_str.c_str(), -1, SQLITE_TRANSIENT);
+  }
 
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     VaultDocumentItem it;

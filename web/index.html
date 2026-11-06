@@ -97,7 +97,7 @@
 
       <div class="top-status">
         <span class="status-pulse"></span>
-        <span id="service-state">Corpus 2026 Ativo</span>
+        <span id="service-state">Corpus Multi-ano Ativo</span>
       </div>
     </header>
 
@@ -109,7 +109,7 @@
           <div class="hero-copy">
             <span class="eyebrow">OBSERVAR · PRESERVAR · EVIDENCIAR</span>
             <h1 id="visao-title">Evidências científicas com <em>prova documental verificável.</em></h1>
-            <p>Corpus dos Informativos Conjunturais da Emater/RS-Ascar (2026). Cada evento climático, métrica produtiva e menção municipal é indexada como evidência documental com vínculo criptográfico ao PDF fonte original.</p>
+            <p id="hero-subtitle">Corpus Consolidado da Emater/RS-Ascar (Multi-ano: 2024 a 2026). Cada evento climático, métrica produtiva e menção municipal é indexada como evidência documental com vínculo criptográfico ao PDF fonte original.</p>
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
               <button class="button white" id="hero-go-events" type="button">⌁ Explorar Eventos &amp; Riscos <span aria-hidden="true">→</span></button>
               <button class="button outline-hero" id="hero-go-territories" type="button">⌖ Municípios IBGE</button>
@@ -178,8 +178,8 @@
           </article>
           <article class="stat clickable" id="card-stat-vault">
             <span>Documentos sob Custódia</span>
-            <strong id="stat-documents">34</strong>
-            <small>Informativos 2026 com SHA-256 no cofre</small>
+            <strong id="stat-documents">150</strong>
+            <small id="stat-documents-label">Informativos com SHA-256 no cofre</small>
           </article>
         </div>
 
@@ -198,6 +198,11 @@
             <span class="fact-icon">03</span>
             <h2>Integridade Epistêmica SisTer</h2>
             <p>Diferente de sistemas que inventam fatos via modelos alucinativos, o EVIDA garante separação estrita entre o registro documental relatado e qualquer inferência estatística futura.</p>
+          </article>
+          <article class="panel fact">
+            <span class="fact-icon">04</span>
+            <h2>Origem das 8.416 Observações</h2>
+            <p>Extraídas semanalmente das tabelas e laudos técnicos dos 150 informativos oficiais: rendimentos físicos (kg/ha), fases fenológicas da safra (floração, colheita em %), precipitação acumulada (mm), áreas (ha) e cotações de preços (R$/saca), cada qual auditável com citação literal e página no PDF original.</p>
           </article>
         </div>
       </section>
@@ -554,12 +559,60 @@
           </form>
         </div>
 
+        <!-- SÍNTESE TEMPORAL: DOCUMENTOS DO COFRE -->
+        <div class="synthesis-panel" id="vault-year-cards">
+          <article class="synthesis-card clickable active" onclick="filterVaultYear('2026')">
+            <div class="synthesis-icon">📅</div>
+            <div class="synthesis-info">
+              <h3>Safra 2026</h3>
+              <p>44 informativos semanais oficiais</p>
+              <span class="synthesis-action">Ver acervo 2026 →</span>
+            </div>
+          </article>
+          <article class="synthesis-card clickable" onclick="filterVaultYear('2025')">
+            <div class="synthesis-icon">📚</div>
+            <div class="synthesis-info">
+              <h3>Safra 2025</h3>
+              <p>53 informativos semanais (ano completo)</p>
+              <span class="synthesis-action">Ver acervo 2025 →</span>
+            </div>
+          </article>
+          <article class="synthesis-card clickable" onclick="filterVaultYear('2024')">
+            <div class="synthesis-icon">🌊</div>
+            <div class="synthesis-info">
+              <h3>Safra 2024 (Enchentes)</h3>
+              <p>53 informativos (inclui maio/2024)</p>
+              <span class="synthesis-action">Ver acervo 2024 →</span>
+            </div>
+          </article>
+          <article class="synthesis-card clickable" onclick="filterVaultYear('todos')">
+            <div class="synthesis-icon">🗄️</div>
+            <div class="synthesis-info">
+              <h3>Acervo Consolidado</h3>
+              <p>Todos os 150 informativos (2024-2026)</p>
+              <span class="synthesis-action">Exibir acervo completo →</span>
+            </div>
+          </article>
+        </div>
+
+        <div id="vault-active-filter-bar" class="active-filter-bar">
+          <span id="vault-active-filter-text">Exibindo informativos de: <strong>2026 (Safra Atual)</strong></span>
+          <button type="button" onclick="filterVaultYear('todos')">Exibir todos os 150 informativos</button>
+        </div>
+
+        <div class="toolbar-scientific">
+          <label class="searchwrap">
+            <span aria-hidden="true">⌕</span>
+            <input id="vault-search" type="search" placeholder="Filtrar documento por número, data de publicação ou arquivo...">
+          </label>
+        </div>
+
         <!-- TABELA DO COFRE -->
         <div class="panel">
           <div class="section-heading">
             <div>
-              <h2>Documentos Preservados em Custódia (34 Informativos)</h2>
-              <p>Cópias imutáveis mantidas no disco local com integridade matemática.</p>
+              <h2 id="vault-section-title">Documentos Preservados em Custódia</h2>
+              <p>Cópias imutáveis mantidas no disco local com integridade criptográfica verificada.</p>
             </div>
           </div>
 
