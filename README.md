@@ -66,3 +66,9 @@ Acesso local disponível em: **http://127.0.0.1:18142**
 - `GET /api/v1/evidence/:id/audit` — selo probatório, hash SHA-256, página e contexto integral;
 - `POST /api/v1/documents/upload` — ingestão contínua com cálculo instantâneo de SHA-256;
 - `POST /api/v1/auth/request-code` / `POST /api/v1/auth/verify-code` — autenticação OTP padrão MORFO.
+
+## Premissas de desenvolvimento
+
+**Simples, leve. Sempre pronto. Sempre incompleto!**
+
+[Significado e símbolos das premissas](docs/sister-principles/README.md).

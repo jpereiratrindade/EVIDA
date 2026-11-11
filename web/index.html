@@ -15,6 +15,15 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/app.css">
   <script src="/app.js" defer></script>
+<style>
+/* Princípios SisTer: compromissos de desenvolvimento, independentes da saúde do serviço. */
+.sister-principles{grid-column:1/-1;padding:16px 0;font:inherit;color:inherit}
+.sister-principles-title{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;opacity:.8}
+.sister-principles-list{list-style:none!important;display:flex;flex-wrap:wrap;gap:10px 22px;margin:10px 0 0!important;padding:0!important}
+.sister-principles-list li{display:flex!important;align-items:center;gap:8px;font-size:12px;line-height:1.5;color:inherit}
+.sister-principles-list svg{display:block;width:20px!important;height:20px!important;flex:0 0 20px;fill:none!important;stroke:currentColor!important;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+aside .sister-principles-list{display:grid;gap:8px}
+</style>
 </head>
 <body>
 <a class="skip" href="#main">Ir para o conteúdo</a>
@@ -52,7 +61,7 @@
     <div class="sidebar-bottom">
       <div class="side-note">
         <small>REGRA METODOLÓGICA</small>
-        <strong>Sempre pronto.<br>Sempre incompleto.</strong>
+        <section class="sister-principles" aria-label="Princípios de desenvolvimento"><span class="sister-principles-title">PRINCÍPIOS DE DESENVOLVIMENTO</span><ul class="sister-principles-list"><li><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M20 4C12 2 4 8 5 15l4 4c7 1 13-7 11-15Z"/><path d="M3 21 16 8M8 16v-5m0 5h5"/></svg><span>Simples, leve.</span></li><li><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span>Sempre pronto.</span></li><li><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M20 8a9 9 0 1 0 0 8"/><path d="M20 3v6h-6"/></svg><span>Sempre incompleto!</span></li></ul></section>
         <p>Uma afirmação documental é evidência de registro oficial, não comprovação física automática.</p>
       </div>
       <div class="connection">
